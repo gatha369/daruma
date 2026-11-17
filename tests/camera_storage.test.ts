@@ -10,7 +10,7 @@ describe('カメラ（横持ち）', () => {
     for (const a of [1, ...aspects]) {
       const cam = new PerspectiveCamera();
       placeCamera(cam, a, 0, fitFov(a));
-      for (const z of [1.6, 0, -10, -50, -100]) {
+      for (const z of [3, 1.6, 0, -10, -50, -100]) {
         for (const x of [-BANK_X, BANK_X]) {
           const p = project(cam, x, 0, z);
           expect(Math.abs(p.x), `aspect=${a} z=${z}`).toBeLessThanOrEqual(1);
@@ -22,12 +22,14 @@ describe('カメラ（横持ち）', () => {
     }
   });
 
-  it('前方の川が画面の上の方まで見える（何もない霧の部分を少なく）', () => {
+  it('前方の川がよく見え、地平線の上に遠景の山の入る空が少しだけある', () => {
     for (const a of aspects) {
       const cam = new PerspectiveCamera();
       placeCamera(cam, a, 0, fitFov(a));
-      // 100先の川が画面の上から2割以内に映る
-      expect(project(cam, 0, 0, -100).y, `aspect=${a}`).toBeGreaterThan(0.6);
+      expect(project(cam, 0, 0, -60).y, `aspect=${a}`).toBeGreaterThan(0.4); // 60先の川が画面の上半分に映る
+      const horizon = project(cam, 0, 0, -5000).y;
+      expect(horizon, `aspect=${a}`).toBeGreaterThan(0.6); // 空（霧と山）は上から2割まで
+      expect(horizon, `aspect=${a}`).toBeLessThan(0.85); // 山が見える分の空は残す
     }
   });
 });

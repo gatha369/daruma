@@ -4,6 +4,9 @@ import { Sim, MAX_LIVES, ROSARY_SIZE } from './game/sim';
 import { Input } from './game/input';
 import { recordRun, loadBest, loadSound, saveSound } from './game/storage';
 import { World } from './render/world';
+import { QualityController, SETTINGS, initialLevel, Level } from './game/quality';
+import { stageAt, STAGES } from './game/scenery';
+import { paperDataURL } from './render/textures';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>('game');
@@ -16,6 +19,8 @@ const ui = {
 };
 
 const world = new World(canvas);
+// 和紙のざらつきを画面全体にうっすら重ねる
+$('paper').style.backgroundImage = `url(${paperDataURL()})`;
 const input = new Input((cx, cy) => world.screenToRiverX(cx, cy, window.innerWidth, window.innerHeight));
 
 type Screen = 'title' | 'playing' | 'paused' | 'result';
@@ -111,6 +116,29 @@ input.onKey = (key) => {
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 
+// ---- 重い端末向けの自動調整（第8章） ----
+const isTouch = window.matchMedia('(pointer: coarse)').matches;
+// 確認用：アドレスの末尾に ?q=0〜2 を付けると、その画質に固定する（自動調整しない）
+const fixedQ = new URLSearchParams(location.search).get('q');
+const fixedLevel = fixedQ !== null && ['0', '1', '2'].includes(fixedQ) ? (Number(fixedQ) as Level) : null;
+const quality = new QualityController(fixedLevel ?? initialLevel(isTouch));
+world.setQuality(SETTINGS[quality.level]);
+
+/** 拾った珠が、画面上部のカウントへ吸い込まれていく */
+function flyBead(x: number, z: number) {
+  const from = world.toScreen(x, 0.2, z, window.innerWidth, window.innerHeight);
+  const to = ui.beadCount.getBoundingClientRect();
+  const el = document.createElement('span');
+  el.className = 'fly-bead';
+  el.style.transform = `translate(${from.x}px, ${from.y}px)`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    el.style.transform = `translate(${to.left + to.width / 2}px, ${to.top + to.height / 2}px) scale(0.6)`;
+    el.style.opacity = '0.2';
+  }));
+  setTimeout(() => el.remove(), 550);
+}
+
 // ---- 画面の向き：スマホは横持ち。縦のときは止めて案内を出し、横にすると自動で再開 ----
 const coarse = window.matchMedia('(pointer: coarse)');
 function checkOrientation() {
@@ -142,13 +170,18 @@ function step(dt: number) {
   for (const e of sim.update(dt, input.targetX)) {
     if (e.type === 'collect') {
       world.collect(e.bead);
+      flyBead(e.bead.x, -e.bead.z);
       ui.beadsWrap.classList.remove('pulse');
       void ui.beadsWrap.offsetWidth; // アニメーションをやり直すため
       ui.beadsWrap.classList.add('pulse');
     } else if (e.type === 'rosary') {
+      world.rosary(sim);
       toast(`念珠 一連 完成（${ROSARY_SIZE}珠）`);
+    } else if (e.type === 'capsize') {
+      world.splash(sim.player.x, -sim.distance, true);
     } else if (e.type === 'recover') {
       sinceRecover = 0;
+      world.splash(sim.player.x, -sim.distance, false);
     } else if (e.type === 'wave') {
       toast('大波');
     } else if (e.type === 'gameover') {
@@ -167,9 +200,16 @@ function loop(now: number) {
   last = now;
   step(dt);
   const t = now / 1000;
-  if (screen === 'title') world.renderTitle(t);
+  if (screen === 'title') world.renderTitle(t, dt);
   else world.render(sim, t, screen === 'playing' && !rotateBlock ? dt : 0, sinceRecover);
   updateHud();
+  // 夜の景色では文字を白くする
+  document.body.classList.toggle('night', world.palette.dark > 0.5);
+  // 滑らかに動いていなければ、見た目を軽くする
+  if (fixedLevel === null && (screen === 'playing' || screen === 'title')) {
+    const lv = quality.frame(dt);
+    if (lv !== null) world.setQuality(SETTINGS[lv]);
+  }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -180,4 +220,7 @@ requestAnimationFrame(loop);
   get sim() { return sim; },
   get rotateBlock() { return rotateBlock; },
   best: () => loadBest(),
+  get quality() { return quality.level; },
+  get stage() { const s = stageAt(sim.distance); return STAGES[s.t < 0.5 ? s.from : s.to].name; },
+  get wearingRosary() { return world.wearingRosary; },
 };

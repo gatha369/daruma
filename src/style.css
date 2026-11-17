@@ -14,6 +14,27 @@ body {
 #game { display: block; position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; }
 button { font-family: inherit; color: inherit; cursor: pointer; }
 
+/* 和紙のざらつきと、画面の縁の墨のにじみ */
+#paper {
+  position: fixed; inset: 0; pointer-events: none; mix-blend-mode: multiply; opacity: 0.32;
+  background-size: 160px 160px;
+}
+#paper::after {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0) 55%, rgba(40,34,28,0.28) 100%);
+}
+.fly-bead {
+  position: fixed; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle at 35% 35%, #f3c58a, #7b4a24 70%); box-shadow: 0 0 10px 3px rgba(255,214,150,0.8);
+  transition: transform 0.5s cubic-bezier(.5,0,.8,.6), opacity 0.5s; z-index: 5;
+}
+
+/* 夜の景色では、文字を白く */
+body.night #hud { color: #f1ede2; text-shadow: 0 0 6px #000, 0 0 2px #000; }
+body.night #score .beads b, body.night #score .rosaries b { color: #e0a96a; }
+body.night #toast { color: #f1ede2; text-shadow: 0 0 10px #000, 0 0 4px #000; }
+body.night #paper { opacity: 0.12; }
+
 /* ---- プレイ中の表示 ---- */
 #hud {
   position: fixed; left: 0; right: 0; top: 0;
