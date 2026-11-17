@@ -3,7 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <title>一葦渡江</title>
+    <title>%PAGE_TITLE%</title>
+    <meta name="description" content="%PAGE_DESCRIPTION%" />
+    <!-- リンクを貼ったときの表示（OGP）。値は src/config.ts で変える -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="長岡念珠店" />
+    <meta property="og:title" content="%PAGE_TITLE%" />
+    <meta property="og:description" content="%PAGE_DESCRIPTION%" />
+    <meta property="og:url" content="%SITE_URL%" />
+    <meta property="og:image" content="%OGP_IMAGE_URL%" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="ja_JP" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href="/favicon.svg" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
@@ -34,7 +46,7 @@
         <p class="hint">左右に動かして、岩や渦をよけながら長江を渡る</p>
       </div>
       <button id="sound-btn" class="small-btn" aria-pressed="false">音：オフ</button>
-      <p class="shop">長岡念珠店</p>
+      <a id="shop-link" class="shop" target="_blank" rel="noopener">長岡念珠店</a>
     </section>
 
     <!-- 一時停止 -->
@@ -56,11 +68,13 @@
           <tr><th>拾った珠</th><td><b id="r-beads">0</b> 個 <span id="r-beads-new" class="new" hidden>新記録</span></td><td class="best">ベスト <span id="b-beads">0</span> 個</td></tr>
           <tr><th>念珠</th><td><b id="r-rosaries">0</b> 連 <span id="r-rosaries-new" class="new" hidden>新記録</span></td><td class="best">ベスト <span id="b-rosaries">0</span> 連</td></tr>
         </table>
-        <p class="story">（ここに一葦渡江の逸話の紹介文が入ります。文面は長岡念珠店で用意します）</p>
+        <p class="story" id="story"></p>
         <div class="buttons">
           <button id="retry-btn" class="main-btn">もう一度</button>
-          <button id="title-btn" class="sub-btn">タイトルへ</button>
+          <a id="share-btn" class="link-btn" target="_blank" rel="noopener">Xで共有</a>
+          <a id="shop-btn" class="link-btn" target="_blank" rel="noopener">長岡念珠店のサイトへ</a>
         </div>
+        <button id="title-btn" class="sub-btn">タイトルへ</button>
       </div>
     </section>
 

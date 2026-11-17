@@ -7,6 +7,7 @@ import { World } from './render/world';
 import { QualityController, SETTINGS, initialLevel, Level } from './game/quality';
 import { stageAt, STAGES } from './game/scenery';
 import { paperDataURL } from './render/textures';
+import { SHOP_URL, STORY_TEXT, shareUrl } from './config';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>('game');
@@ -80,11 +81,15 @@ function showResult() {
   $('r-distance-new').hidden = !isNew.distance;
   $('r-beads-new').hidden = !isNew.beads;
   $('r-rosaries-new').hidden = !isNew.rosaries;
+  $<HTMLAnchorElement>('share-btn').href = shareUrl(formatRi(sim.distance), sim.rosaries);
   resultShownAt = performance.now();
   show('result');
 }
 
 // ---- ボタンと操作 ----
+$('story').textContent = STORY_TEXT;
+$<HTMLAnchorElement>('shop-link').href = SHOP_URL;
+$<HTMLAnchorElement>('shop-btn').href = SHOP_URL;
 $('start-btn').addEventListener('click', startGame);
 $('pause-btn').addEventListener('click', pause);
 $('resume-btn').addEventListener('click', resume);
@@ -99,7 +104,7 @@ function updateSoundLabel() {
 }
 updateSoundLabel();
 ui.sound.addEventListener('click', () => {
-  soundOn = !soundOn; // 音そのものはステップ4で入れる。いまは設定の切り替えと保存だけ
+  soundOn = !soundOn; // 音そのものはステップ5（第7章の決定後）で入れる。いまは設定の切り替えと保存だけ
   saveSound(soundOn);
   updateSoundLabel();
 });
