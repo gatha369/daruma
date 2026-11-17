@@ -1,22 +1,23 @@
-// ゲームの中身（画面表示とは切り離した計算部分）。テストしやすいように純粋な関数でまとめる。
+// ゲームの中身のうち、基本的な計算（画面表示とは切り離してある）
 
 export const RIVER_HALF_WIDTH = 5; // 葉が動ける左右の幅（中心から片側）
+export const BANK_X = RIVER_HALF_WIDTH + 1.2; // 川岸の目印の位置
+
+// ---- 前進の速さ（4.2 / 4.5） ----
 export const START_SPEED = 8; // 前進の初速（1秒あたりの距離）
-export const MAX_SPEED = 20;
-export const ACCEL = 0.12; // 1秒ごとに増える速さ
+export const MAX_SPEED = 18; // 速さの上限（人が反応できる範囲にとどめる）
+export const CAP_DISTANCE = 3000; // この距離（30里）で速さ・難しさが上限に達する
+
 export const UNITS_PER_RI = 100; // 画面上の「1里」にあたるゲーム内の距離（仮）
+
+// ---- 左右の動き ----
 export const KEY_TARGET_SPEED = 11; // キー押しっぱなしで目標位置が動く速さ
-export const FOLLOW = 6; // 目標位置への寄りやすさ（大きいほど速く寄る）
+export const STIFFNESS = 18; // 目標位置へ引き寄せる強さ
 export const DAMPING = 4; // 横すべりの減衰
 
+// ---- 当たり判定 ----
 export const LEAF_HIT_RADIUS = 0.35; // 葉の当たり判定（前後2つの円）
 export const LEAF_HIT_OFFSET = 0.6; // 葉の中心から前後の円までの距離
-
-export interface Rock {
-  x: number;
-  z: number; // 前方向の位置（距離）
-  r: number; // 半径
-}
 
 export interface Player {
   x: number;
@@ -25,16 +26,30 @@ export interface Player {
 }
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+export const smoothstep = (t: number) => t * t * (3 - 2 * t);
 
-/** 経過時間から前進の速さを求める */
-export function speedAt(elapsed: number): number {
-  return Math.min(MAX_SPEED, START_SPEED + ACCEL * elapsed);
+/** 進み具合 0〜1（CAP_DISTANCE で 1 になり、それ以上は増えない） */
+export function difficultyAt(distance: number): number {
+  return clamp(distance / CAP_DISTANCE, 0, 1);
+}
+
+/** 進んだ距離から前進の速さを求める（進むほど速くなり、上限で止まる） */
+export function speedAt(distance: number): number {
+  return START_SPEED + (MAX_SPEED - START_SPEED) * difficultyAt(distance);
+}
+
+export interface StepOptions {
+  /** 外からの横向きの力（横向きの流れ・渦） */
+  push?: number;
+  /** 操作の効き具合 0〜1（大波を受けると下がる） */
+  control?: number;
 }
 
 /** 葉を目標位置へ「少し遅れて滑らかに」寄せる（ばねと減衰） */
-export function stepPlayer(p: Player, dt: number): Player {
+export function stepPlayer(p: Player, dt: number, opt: StepOptions = {}): Player {
+  const control = opt.control ?? 1;
   const targetX = clamp(p.targetX, -RIVER_HALF_WIDTH, RIVER_HALF_WIDTH);
-  const ax = (targetX - p.x) * FOLLOW * FOLLOW * 0.5 - p.vx * DAMPING;
+  const ax = (targetX - p.x) * STIFFNESS * control - p.vx * DAMPING * (0.5 + 0.5 * control) + (opt.push ?? 0);
   let vx = p.vx + ax * dt;
   let x = p.x + vx * dt;
   if (x < -RIVER_HALF_WIDTH) { x = -RIVER_HALF_WIDTH; vx = Math.max(0, vx); }
@@ -42,33 +57,35 @@ export function stepPlayer(p: Player, dt: number): Player {
   return { x, vx, targetX };
 }
 
-/** 葉（前後2つの円）が岩に当たっているか */
-export function hitsRock(px: number, pz: number, rock: Rock): boolean {
-  for (const off of [-LEAF_HIT_OFFSET, LEAF_HIT_OFFSET]) {
-    const dx = rock.x - px;
-    const dz = rock.z - (pz + off);
-    const rr = rock.r + LEAF_HIT_RADIUS;
-    if (dx * dx + dz * dz < rr * rr) return true;
-  }
-  return false;
+/** 葉の当たり判定の円（前後2つ）の中心 */
+export function leafCircles(px: number, pz: number): [number, number][] {
+  return [[px, pz - LEAF_HIT_OFFSET], [px, pz + LEAF_HIT_OFFSET]];
 }
 
-export function hitsAny(px: number, pz: number, rocks: Rock[]): boolean {
-  return rocks.some((r) => hitsRock(px, pz, r));
+/** 点(x,z)と円が重なるか */
+export function circleHit(px: number, pz: number, cx: number, cz: number, r: number): boolean {
+  const dx = cx - px;
+  const dz = cz - pz;
+  return dx * dx + dz * dz < r * r;
+}
+
+/** 葉が円（岩など）に当たっているか */
+export function leafHitsCircle(px: number, pz: number, cx: number, cz: number, r: number): boolean {
+  return leafCircles(px, pz).some(([x, z]) => circleHit(x, z, cx, cz, r + LEAF_HIT_RADIUS));
+}
+
+/** 葉が横向きの棒（流木：中心 cx、半分の長さ half、太さ r）に当たっているか */
+export function leafHitsLog(px: number, pz: number, cx: number, cz: number, half: number, r: number): boolean {
+  return leafCircles(px, pz).some(([x, z]) => {
+    const nx = clamp(x, cx - half, cx + half); // 棒の上で一番近い点
+    return circleHit(x, z, nx, cz, r + LEAF_HIT_RADIUS);
+  });
 }
 
 /** 距離を「里」の表記にする */
 export function formatRi(distance: number): string {
   return (Math.max(0, distance) / UNITS_PER_RI).toFixed(1);
 }
-
-// ---- 岩の並び ----
-// 一定間隔ごとに「列」を作り、各列には必ず通り抜けの隙間を1つ残す。
-// 隙間の位置は前の列から移動できる範囲だけずらすので、必ずどこかに道がある。
-
-export const ROW_SPACING = 14; // 列と列の前後の間隔
-export const GAP_WIDTH = 3.2; // 通り抜けの隙間の幅（岩の縁から縁まで）
-export const MAX_GAP_SHIFT = 4; // 列ごとに隙間がずれる最大量
 
 export type Rng = () => number;
 
@@ -81,34 +98,4 @@ export function makeRng(seed: number): Rng {
     s ^= s << 5; s >>>= 0;
     return s / 4294967296;
   };
-}
-
-export interface Row {
-  z: number;
-  gapX: number;
-  rocks: Rock[];
-}
-
-/**
- * 1列分の岩を作る。
- * distance が小さいうちは岩をまばらにし、進むほど密にする。
- */
-export function makeRow(z: number, prevGapX: number, distance: number, rng: Rng): Row {
-  const lim = RIVER_HALF_WIDTH - GAP_WIDTH / 2;
-  const gapX = clamp(prevGapX + (rng() * 2 - 1) * MAX_GAP_SHIFT, -lim, lim);
-  // 進み具合 0〜1（約1500の距離で最大の密度）
-  const level = clamp(distance / 1500, 0, 1);
-  const fillChance = 0.25 + 0.55 * level;
-  const rocks: Rock[] = [];
-  // 川幅を1.6間隔の区画に分け、隙間にかからない区画にだけ岩を置く
-  const step = 1.6;
-  for (let cx = -RIVER_HALF_WIDTH; cx <= RIVER_HALF_WIDTH + 0.01; cx += step) {
-    if (rng() > fillChance) continue;
-    const r = 0.45 + rng() * 0.35;
-    const x = cx + (rng() - 0.5) * 0.4;
-    // 岩の縁が隙間に食い込むなら置かない
-    if (Math.abs(x - gapX) < GAP_WIDTH / 2 + r) continue;
-    rocks.push({ x, z: z + (rng() - 0.5) * 2, r });
-  }
-  return { z, gapX, rocks };
 }

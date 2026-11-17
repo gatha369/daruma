@@ -9,11 +9,70 @@
   </head>
   <body>
     <canvas id="game"></canvas>
-    <div id="hud"><span id="distance">0.0</span><small>里</small></div>
-    <div id="overlay" class="show">
-      <p id="overlay-title">一葦渡江</p>
-      <p id="overlay-sub">タップ・クリック・キーではじめる</p>
+
+    <!-- プレイ中の表示 -->
+    <div id="hud" hidden>
+      <div id="lives" aria-label="残り回数"></div>
+      <div id="score">
+        <span class="dist"><b id="distance">0.0</b><small>里</small></span>
+        <span class="beads">珠 <b id="bead-count">0</b>／108</span>
+        <span class="rosaries" id="rosary-wrap" hidden>念珠 <b id="rosary-count">0</b>連</span>
+      </div>
+      <button id="pause-btn" class="icon-btn" aria-label="一時停止">
+        <svg viewBox="0 0 24 24" width="22" height="22"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+      </button>
     </div>
+    <div id="toast"></div>
+
+    <!-- タイトル画面 -->
+    <section id="title" class="screen">
+      <div class="title-box">
+        <h1>一葦渡江</h1>
+        <p class="yomi">いちいとこう</p>
+        <button id="start-btn" class="main-btn">はじめる</button>
+        <p class="hint">左右に動かして、岩や渦をよけながら長江を渡る</p>
+      </div>
+      <button id="sound-btn" class="small-btn" aria-pressed="false">音：オフ</button>
+      <p class="shop">長岡念珠店</p>
+    </section>
+
+    <!-- 一時停止 -->
+    <section id="pause" class="screen dim" hidden>
+      <div class="panel">
+        <h2>一時停止</h2>
+        <button id="resume-btn" class="main-btn">つづける</button>
+        <button id="quit-btn" class="sub-btn">タイトルへ</button>
+      </div>
+    </section>
+
+    <!-- 結果画面 -->
+    <section id="result" class="screen dim" hidden>
+      <div class="panel result">
+        <h2>渡った距離</h2>
+        <p class="big"><b id="r-distance">0.0</b> 里 <span id="r-distance-new" class="new" hidden>新記録</span></p>
+        <p class="best">ベスト <span id="b-distance">0.0</span> 里</p>
+        <table>
+          <tr><th>拾った珠</th><td><b id="r-beads">0</b> 個 <span id="r-beads-new" class="new" hidden>新記録</span></td><td class="best">ベスト <span id="b-beads">0</span> 個</td></tr>
+          <tr><th>念珠</th><td><b id="r-rosaries">0</b> 連 <span id="r-rosaries-new" class="new" hidden>新記録</span></td><td class="best">ベスト <span id="b-rosaries">0</span> 連</td></tr>
+        </table>
+        <p class="story">（ここに一葦渡江の逸話の紹介文が入ります。文面は長岡念珠店で用意します）</p>
+        <div class="buttons">
+          <button id="retry-btn" class="main-btn">もう一度</button>
+          <button id="title-btn" class="sub-btn">タイトルへ</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- スマホを縦に持っているとき -->
+    <section id="rotate" class="screen" hidden>
+      <svg viewBox="0 0 120 120" width="120" height="120" class="rotate-icon" aria-hidden="true">
+        <rect x="42" y="20" width="36" height="64" rx="6" fill="none" stroke="#222" stroke-width="4"/>
+        <path d="M30 92 A40 40 0 0 0 96 80" fill="none" stroke="#c0392b" stroke-width="4"/>
+        <path d="M96 80 l-12 2 l8 9 z" fill="#c0392b"/>
+      </svg>
+      <p>横にしてお楽しみください</p>
+    </section>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

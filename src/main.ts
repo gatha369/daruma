@@ -1,203 +1,183 @@
-// ステップ1：最小限で遊べる版（平らな水面・葉・達磨・岩・距離表示）
-import * as THREE from 'three';
-import {
-  RIVER_HALF_WIDTH, ROW_SPACING, Player, Row, Rock,
-  speedAt, stepPlayer, hitsAny, formatRi, makeRow, makeRng, clamp,
-} from './game/logic';
+// 画面の切り替え（タイトル → プレイ → 結果）と毎コマの処理
+import { formatRi } from './game/logic';
+import { Sim, MAX_LIVES, ROSARY_SIZE } from './game/sim';
 import { Input } from './game/input';
+import { recordRun, loadBest, loadSound, saveSound } from './game/storage';
+import { World } from './render/world';
 
-const canvas = document.getElementById('game') as HTMLCanvasElement;
-const distanceEl = document.getElementById('distance')!;
-const overlay = document.getElementById('overlay')!;
-const overlayTitle = document.getElementById('overlay-title')!;
-const overlaySub = document.getElementById('overlay-sub')!;
-
-// ---- 描画の準備 ----
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-const PAPER = 0xe9e6df;
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(PAPER);
-scene.fog = new THREE.Fog(PAPER, 25, 90);
-
-const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x888880, 2.2));
-const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-sun.position.set(3, 10, 4);
-scene.add(sun);
-
-// 水面（平ら）と川岸の目印。プレイヤーに合わせて一緒に動かす
-const water = new THREE.Mesh(
-  new THREE.PlaneGeometry(60, 240),
-  new THREE.MeshLambertMaterial({ color: 0xc9c8c2 }),
-);
-water.rotation.x = -Math.PI / 2;
-scene.add(water);
-const bankMat = new THREE.MeshLambertMaterial({ color: 0x55534f });
-const banks = [-1, 1].map((side) => {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 240), bankMat);
-  m.position.x = side * (RIVER_HALF_WIDTH + 1.2);
-  scene.add(m);
-  return m;
-});
-
-// 葉と達磨（簡単な形）
-const raft = new THREE.Group();
-const leaf = new THREE.Mesh(
-  new THREE.SphereGeometry(1, 20, 10),
-  new THREE.MeshLambertMaterial({ color: 0x5f6b45 }),
-);
-leaf.scale.set(0.35, 0.06, 1.3);
-raft.add(leaf);
-const daruma = new THREE.Group();
-const body = new THREE.Mesh(
-  new THREE.SphereGeometry(0.42, 24, 16),
-  new THREE.MeshLambertMaterial({ color: 0xc0392b }),
-);
-body.scale.set(1, 1.1, 1);
-body.position.y = 0.45;
-daruma.add(body);
-const face = new THREE.Mesh(
-  new THREE.CircleGeometry(0.2, 20),
-  new THREE.MeshLambertMaterial({ color: 0xf2e6d0 }),
-);
-// 葉は奥（-z）へ進むので、顔は進行方向を向く＝カメラからは背中が見える
-face.position.set(0, 0.55, -0.4);
-face.rotation.y = Math.PI;
-daruma.add(face);
-raft.add(daruma);
-scene.add(raft);
-
-// 岩
-const rockGeo = new THREE.DodecahedronGeometry(1, 0);
-const rockMat = new THREE.MeshLambertMaterial({ color: 0x2b2a28, flatShading: true });
-const rockMeshes = new Map<Rock, THREE.Mesh>();
-
-function addRockMesh(r: Rock) {
-  const m = new THREE.Mesh(rockGeo, rockMat);
-  m.scale.set(r.r, r.r * 1.4, r.r);
-  m.position.set(r.x, r.r * 0.4, -r.z);
-  m.rotation.set(r.x * 3.1, r.z * 1.7, 0);
-  scene.add(m);
-  rockMeshes.set(r, m);
-}
-
-// ---- ゲームの状態 ----
-type Phase = 'ready' | 'playing' | 'over';
-let phase: Phase = 'ready';
-let player: Player = { x: 0, vx: 0, targetX: 0 };
-let distance = 0;
-let elapsed = 0;
-let rows: Row[] = [];
-let nextRowZ = 0;
-let lastGapX = 0;
-let overAt = 0;
-let rng = makeRng(Date.now());
-
-const input = new Input(canvas);
-
-function resetGame() {
-  for (const m of rockMeshes.values()) scene.remove(m);
-  rockMeshes.clear();
-  rows = [];
-  player = { x: 0, vx: 0, targetX: 0 };
-  input.reset();
-  distance = 0;
-  elapsed = 0;
-  nextRowZ = 30; // 最初の岩までは少し余裕を持たせる
-  lastGapX = 0;
-  rng = makeRng(Date.now());
-}
-
-function spawnRows() {
-  while (nextRowZ < distance + 110) {
-    const row = makeRow(nextRowZ, lastGapX, nextRowZ, rng);
-    lastGapX = row.gapX;
-    rows.push(row);
-    row.rocks.forEach(addRockMesh);
-    nextRowZ += ROW_SPACING;
-  }
-  // 後ろに流れた列を片付ける
-  while (rows.length && rows[0].z < distance - 15) {
-    rows.shift()!.rocks.forEach((r) => {
-      const m = rockMeshes.get(r);
-      if (m) scene.remove(m);
-      rockMeshes.delete(r);
-    });
-  }
-}
-
-input.onAction = () => {
-  if (phase === 'ready' || (phase === 'over' && performance.now() - overAt > 800)) {
-    resetGame();
-    phase = 'playing';
-    overlay.classList.remove('show');
-  }
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+const canvas = $<HTMLCanvasElement>('game');
+const ui = {
+  hud: $('hud'), lives: $('lives'), distance: $('distance'), beadCount: $('bead-count'),
+  beadsWrap: document.querySelector('#score .beads') as HTMLElement,
+  rosaryWrap: $('rosary-wrap'), rosaryCount: $('rosary-count'), toast: $('toast'),
+  title: $('title'), pause: $('pause'), result: $('result'), rotate: $('rotate'),
+  sound: $('sound-btn'),
 };
 
-function gameOver() {
-  phase = 'over';
-  overAt = performance.now();
-  overlayTitle.textContent = `${formatRi(distance)} 里`;
-  overlaySub.textContent = '岩にぶつかりました ― タップ・キーでもう一度';
-  overlay.classList.add('show');
+const world = new World(canvas);
+const input = new Input((cx, cy) => world.screenToRiverX(cx, cy, window.innerWidth, window.innerHeight));
+
+type Screen = 'title' | 'playing' | 'paused' | 'result';
+let screen: Screen = 'title';
+let sim = new Sim();
+let sinceRecover = 99;
+let overTimer = -1; // 転覆しきってから結果画面を出すまでの間
+let resultShownAt = 0;
+let rotateBlock = false; // スマホを縦に持っていて止めている
+
+// ---- 残り回数（小さな達磨のアイコン） ----
+const DARUMA_ICON = '<svg viewBox="0 0 22 24"><ellipse cx="11" cy="14" rx="9" ry="9.5" fill="#c0392b"/><circle cx="11" cy="11" r="4.6" fill="#f2e6d0"/><circle cx="9.3" cy="10.6" r="0.9" fill="#222"/><circle cx="12.7" cy="10.6" r="0.9" fill="#222"/></svg>';
+ui.lives.innerHTML = DARUMA_ICON.repeat(MAX_LIVES);
+const lifeIcons = Array.from(ui.lives.querySelectorAll('svg'));
+
+function show(next: Screen) {
+  screen = next;
+  ui.title.hidden = next !== 'title';
+  ui.pause.hidden = next !== 'paused';
+  ui.result.hidden = next !== 'result';
+  ui.hud.hidden = next === 'title';
 }
 
-// ---- 毎コマの処理 ----
-function update(dt: number) {
-  if (phase !== 'playing') return;
-  elapsed += dt;
-  input.update(dt);
-  player = stepPlayer({ ...player, targetX: input.targetX }, dt);
-  distance += speedAt(elapsed) * dt;
-  spawnRows();
-  const nearby = rows.filter((r) => Math.abs(r.z - distance) < 4).flatMap((r) => r.rocks);
-  if (hitsAny(player.x, distance, nearby)) gameOver();
+function startGame() {
+  sim = new Sim();
+  world.reset();
+  input.reset();
+  sinceRecover = 99;
+  overTimer = -1;
+  show('playing');
 }
 
-function render(t: number) {
-  raft.position.set(player.x, 0.05, -distance);
-  // 左右に動くと進行方向へ少し傾く
-  raft.rotation.z = clamp(-player.vx * 0.06, -0.35, 0.35);
-  raft.rotation.y = clamp(-player.vx * 0.03, -0.2, 0.2);
-  daruma.position.y = Math.sin(t * 0.003) * 0.03; // 水に乗ってわずかに揺れる
-  water.position.z = -distance - 80;
-  banks.forEach((b) => (b.position.z = -distance - 80));
-  // 縦持ち（細長い画面）では川幅全体が入らないので、カメラが葉をよく追いかける
-  const follow = portrait ? 0.85 : 0.5;
-  camera.position.set(player.x * follow, portrait ? 4.6 : 3.6, -distance + (portrait ? 7.5 : 6.5));
-  camera.lookAt(player.x * follow * 0.8, 0, -distance - (portrait ? 7 : 10));
-  distanceEl.textContent = formatRi(distance);
-  renderer.render(scene, camera);
+function toTitle() {
+  world.reset();
+  show('title');
 }
 
-let portrait = false;
+function pause() { if (screen === 'playing') show('paused'); }
+function resume() { if (screen === 'paused') show('playing'); }
+
+let toastTimer = 0;
+function toast(text: string) {
+  ui.toast.textContent = text;
+  ui.toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => ui.toast.classList.remove('show'), 1600);
+}
+
+function showResult() {
+  const { best, isNew } = recordRun({ distance: sim.distance, beads: sim.totalBeads, rosaries: sim.rosaries });
+  $('r-distance').textContent = formatRi(sim.distance);
+  $('r-beads').textContent = String(sim.totalBeads);
+  $('r-rosaries').textContent = String(sim.rosaries);
+  $('b-distance').textContent = formatRi(best.distance);
+  $('b-beads').textContent = String(best.beads);
+  $('b-rosaries').textContent = String(best.rosaries);
+  $('r-distance-new').hidden = !isNew.distance;
+  $('r-beads-new').hidden = !isNew.beads;
+  $('r-rosaries-new').hidden = !isNew.rosaries;
+  resultShownAt = performance.now();
+  show('result');
+}
+
+// ---- ボタンと操作 ----
+$('start-btn').addEventListener('click', startGame);
+$('pause-btn').addEventListener('click', pause);
+$('resume-btn').addEventListener('click', resume);
+$('quit-btn').addEventListener('click', toTitle);
+$('retry-btn').addEventListener('click', startGame);
+$('title-btn').addEventListener('click', toTitle);
+
+let soundOn = loadSound();
+function updateSoundLabel() {
+  ui.sound.textContent = soundOn ? '音：オン' : '音：オフ';
+  ui.sound.setAttribute('aria-pressed', String(soundOn));
+}
+updateSoundLabel();
+ui.sound.addEventListener('click', () => {
+  soundOn = !soundOn; // 音そのものはステップ4で入れる。いまは設定の切り替えと保存だけ
+  saveSound(soundOn);
+  updateSoundLabel();
+});
+
+input.onTap = () => {
+  if (screen === 'title' && !rotateBlock) startGame(); // タイトルはどこを押しても開始
+};
+input.onKey = (key) => {
+  if (rotateBlock) return;
+  if (screen === 'title' && key !== 'Escape') startGame();
+  else if (screen === 'playing' && (key === 'Escape' || key === 'p' || key === 'P')) pause();
+  else if (screen === 'paused' && [' ', 'Enter', 'Escape', 'p', 'P'].includes(key)) resume();
+  else if (screen === 'result' && (key === ' ' || key === 'Enter') && performance.now() - resultShownAt > 800) startGame();
+};
+document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+
+// ---- 画面の向き：スマホは横持ち。縦のときは止めて案内を出し、横にすると自動で再開 ----
+const coarse = window.matchMedia('(pointer: coarse)');
+function checkOrientation() {
+  rotateBlock = coarse.matches && window.innerHeight > window.innerWidth;
+  ui.rotate.hidden = !rotateBlock;
+}
+
 function resize() {
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  // 縦持ちでも川幅が収まるように、細長い画面では視野を広げる
-  portrait = w / h < 1;
-  camera.fov = portrait ? 75 : 60;
-  camera.updateProjectionMatrix();
+  world.resize(window.innerWidth, window.innerHeight);
+  checkOrientation();
 }
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
 resize();
 
+// ---- 毎コマの処理 ----
+function updateHud() {
+  ui.distance.textContent = formatRi(sim.distance);
+  ui.beadCount.textContent = String(sim.beads);
+  ui.rosaryWrap.hidden = sim.rosaries === 0;
+  ui.rosaryCount.textContent = String(sim.rosaries);
+  lifeIcons.forEach((el, i) => el.classList.toggle('lost', i >= sim.lives));
+}
+
+function step(dt: number) {
+  if (screen !== 'playing' || rotateBlock) return;
+  input.update(dt);
+  sinceRecover += dt;
+  for (const e of sim.update(dt, input.targetX)) {
+    if (e.type === 'collect') {
+      world.collect(e.bead);
+      ui.beadsWrap.classList.remove('pulse');
+      void ui.beadsWrap.offsetWidth; // アニメーションをやり直すため
+      ui.beadsWrap.classList.add('pulse');
+    } else if (e.type === 'rosary') {
+      toast(`念珠 一連 完成（${ROSARY_SIZE}珠）`);
+    } else if (e.type === 'recover') {
+      sinceRecover = 0;
+    } else if (e.type === 'wave') {
+      toast('大波');
+    } else if (e.type === 'gameover') {
+      overTimer = 0.6;
+    }
+  }
+  if (overTimer >= 0) {
+    overTimer -= dt;
+    if (overTimer < 0) showResult();
+  }
+}
+
 let last = performance.now();
-function loop(t: number) {
-  const dt = Math.min(0.05, (t - last) / 1000);
-  last = t;
-  update(dt);
-  render(t);
+function loop(now: number) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  step(dt);
+  const t = now / 1000;
+  if (screen === 'title') world.renderTitle(t);
+  else world.render(sim, t, screen === 'playing' && !rotateBlock ? dt : 0, sinceRecover);
+  updateHud();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
 // 動作確認用（自動テストから状態を読む）
 (window as unknown as { __game: unknown }).__game = {
-  get phase() { return phase; },
-  get distance() { return distance; },
-  get x() { return player.x; },
+  get screen() { return screen; },
+  get sim() { return sim; },
+  get rotateBlock() { return rotateBlock; },
+  best: () => loadBest(),
 };

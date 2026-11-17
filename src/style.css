@@ -1,9 +1,91 @@
-html, body { margin: 0; height: 100%; overflow: hidden; background: #e9e6df; }
-body { font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; color: #222; touch-action: none; user-select: none; -webkit-user-select: none; }
-#game { display: block; width: 100vw; height: 100vh; height: 100dvh; }
-#hud { position: fixed; top: max(12px, env(safe-area-inset-top)); left: 0; right: 0; text-align: center; font-size: 28px; pointer-events: none; text-shadow: 0 0 6px #fff; }
-#hud small { font-size: 16px; margin-left: 4px; }
-#overlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; background: rgba(233,230,223,0.55); }
-#overlay.show { display: flex; }
-#overlay-title { font-size: 40px; margin: 0 0 12px; letter-spacing: 0.2em; }
-#overlay-sub { font-size: 16px; margin: 0; }
+:root {
+  --paper: #e9e6df;
+  --ink: #222;
+  --shu: #c0392b;
+  --bead: #7b4a24;
+}
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); }
+body {
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", serif;
+  color: var(--ink); touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+[hidden] { display: none !important; }
+#game { display: block; position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; }
+button { font-family: inherit; color: inherit; cursor: pointer; }
+
+/* ---- プレイ中の表示 ---- */
+#hud {
+  position: fixed; left: 0; right: 0; top: 0;
+  padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
+  display: flex; align-items: flex-start; justify-content: space-between;
+  pointer-events: none; text-shadow: 0 0 6px #fff, 0 0 2px #fff;
+}
+#lives { display: flex; gap: 4px; min-width: 90px; }
+#lives svg { width: 22px; height: 24px; }
+#lives svg.lost { opacity: 0.2; }
+#score { display: flex; align-items: baseline; gap: 18px; font-size: 15px; }
+#score .dist b { font-size: 28px; font-weight: normal; }
+#score .dist small { margin-left: 3px; }
+#score .beads b, #score .rosaries b { font-size: 20px; font-weight: normal; color: var(--bead); }
+#score .beads.pulse b { animation: pulse 0.3s; }
+@keyframes pulse { 50% { color: #e0a050; } }
+.icon-btn {
+  pointer-events: auto; width: 44px; height: 44px; min-width: 90px; display: flex; justify-content: flex-end; align-items: center;
+  background: none; border: none; padding: 0;
+}
+.icon-btn svg { fill: var(--ink); background: rgba(255,255,255,0.6); border-radius: 50%; padding: 10px; }
+#toast {
+  position: fixed; left: 50%; top: 32%; transform: translate(-50%, -50%);
+  font-size: 30px; letter-spacing: 0.15em; pointer-events: none; opacity: 0; transition: opacity 0.4s;
+  text-shadow: 0 0 10px #fff, 0 0 4px #fff; white-space: nowrap;
+}
+#toast.show { opacity: 1; }
+
+/* ---- 画面（タイトル・一時停止・結果） ---- */
+.screen {
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.screen.dim { background: rgba(233,230,223,0.7); }
+.title-box { text-align: center; margin-top: -12vh; }
+#title h1 { font-size: clamp(40px, 9vh, 72px); font-weight: normal; letter-spacing: 0.35em; margin: 0 0 0 0.35em; text-shadow: 0 0 12px #fff; }
+#title .yomi { margin: 4px 0 4vh; letter-spacing: 0.4em; font-size: 15px; }
+#title .hint { font-size: 13px; margin-top: 2.5vh; opacity: 0.75; }
+.main-btn {
+  font-size: 20px; letter-spacing: 0.3em; padding: 10px 28px 10px 34px; border: 1px solid var(--ink);
+  background: rgba(255,255,255,0.75); border-radius: 2px;
+}
+.sub-btn { font-size: 15px; letter-spacing: 0.2em; padding: 8px 18px; border: none; background: none; text-decoration: underline; }
+.small-btn {
+  position: absolute; left: max(14px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom));
+  font-size: 13px; padding: 6px 12px; border: 1px solid #888; background: rgba(255,255,255,0.6); border-radius: 2px;
+}
+.shop { position: absolute; right: max(14px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); margin: 0; font-size: 13px; letter-spacing: 0.15em; }
+.panel {
+  background: rgba(255,255,255,0.85); padding: 3vh 36px; border: 1px solid #bbb; text-align: center;
+  max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow: auto; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.panel h2 { font-weight: normal; font-size: 16px; letter-spacing: 0.3em; margin: 0; }
+.result .big { font-size: 22px; margin: 0; }
+.result .big b { font-size: 44px; font-weight: normal; }
+.result table { border-collapse: collapse; font-size: 15px; }
+.result th { font-weight: normal; text-align: left; padding: 2px 12px 2px 0; }
+.result td { text-align: right; padding: 2px 8px; }
+.result td b { font-size: 20px; font-weight: normal; }
+.result .best { font-size: 13px; opacity: 0.7; margin: 0; }
+.result .story { font-size: 13px; max-width: 420px; line-height: 1.6; margin: 4px 0; opacity: 0.8; }
+.result .buttons { display: flex; gap: 12px; align-items: center; }
+.new { color: var(--shu); font-size: 12px; border: 1px solid var(--shu); padding: 0 4px; margin-left: 4px; vertical-align: middle; }
+#rotate { background: var(--paper); z-index: 10; gap: 10px; font-size: 18px; letter-spacing: 0.15em; }
+.rotate-icon { animation: tilt 2s ease-in-out infinite; }
+@keyframes tilt { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+
+/* 背の低い画面（スマホ横持ち）では詰める */
+@media (max-height: 460px) {
+  #score .dist b { font-size: 24px; }
+  .result .big b { font-size: 32px; }
+  .panel { padding: 10px 24px; gap: 4px; }
+  .result .story { font-size: 12px; margin: 0; }
+}
