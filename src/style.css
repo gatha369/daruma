@@ -23,17 +23,11 @@ button { font-family: inherit; color: inherit; cursor: pointer; }
   content: ""; position: absolute; inset: 0;
   background: radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0) 55%, rgba(40,34,28,0.28) 100%);
 }
-.fly-bead {
-  position: fixed; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(circle at 35% 35%, #f3c58a, #7b4a24 70%); box-shadow: 0 0 10px 3px rgba(255,214,150,0.8);
+.fly-washi {
+  position: fixed; left: -9px; top: -9px; width: 18px; height: 18px; pointer-events: none;
+  background: #fbf8f0; border: 1px solid #555; box-shadow: 0 0 8px 2px rgba(255,255,255,0.9);
   transition: transform 0.5s cubic-bezier(.5,0,.8,.6), opacity 0.5s; z-index: 5;
 }
-
-/* 夜の景色では、文字を白く */
-body.night #hud { color: #f1ede2; text-shadow: 0 0 6px #000, 0 0 2px #000; }
-body.night #score .beads b, body.night #score .rosaries b { color: #e0a96a; }
-body.night #toast { color: #f1ede2; text-shadow: 0 0 10px #000, 0 0 4px #000; }
-body.night #paper { opacity: 0.12; }
 
 /* ---- プレイ中の表示 ---- */
 #hud {
@@ -45,12 +39,21 @@ body.night #paper { opacity: 0.12; }
 #lives { display: flex; gap: 4px; min-width: 90px; }
 #lives svg { width: 22px; height: 24px; }
 #lives svg.lost { opacity: 0.2; }
-#score { display: flex; align-items: baseline; gap: 18px; font-size: 15px; }
-#score .dist b { font-size: 28px; font-weight: normal; }
-#score .dist small { margin-left: 3px; }
-#score .beads b, #score .rosaries b { font-size: 20px; font-weight: normal; color: var(--bead); }
-#score .beads.pulse b { animation: pulse 0.3s; }
-@keyframes pulse { 50% { color: #e0a050; } }
+#center { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+#score { font-size: 18px; letter-spacing: 0.1em; white-space: nowrap; }
+#score b { font-size: 38px; font-weight: normal; margin: 0 2px; display: inline-block; min-width: 1.6em; text-align: right; }
+#score .goal { font-size: 20px; }
+#score.pulse b { animation: pulse 0.3s; }
+@keyframes pulse { 50% { color: var(--shu); transform: scale(1.12); } }
+/* 念珠の無敵の残り時間 */
+#glow { display: flex; align-items: center; gap: 6px; font-size: 13px; letter-spacing: 0.1em; }
+#glow .bar { width: 110px; height: 7px; border: 1px solid #555; background: rgba(255,255,255,0.6); overflow: hidden; }
+#glow .bar i {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, #e74c3c, #f39c12, #f1c40f, #2ecc71, #3498db, #5b4bd5, #9b59b6);
+}
+#glow b { font-weight: normal; min-width: 1em; }
+#glow.warn { opacity: 0.25; }
 .icon-btn {
   pointer-events: auto; width: 44px; height: 44px; min-width: 90px; display: flex; justify-content: flex-end; align-items: center;
   background: none; border: none; padding: 0;
@@ -70,8 +73,8 @@ body.night #paper { opacity: 0.12; }
 }
 .screen.dim { background: rgba(233,230,223,0.7); }
 .title-box { text-align: center; margin-top: -12vh; }
-#title h1 { font-size: clamp(40px, 9vh, 72px); font-weight: normal; letter-spacing: 0.35em; margin: 0 0 0 0.35em; text-shadow: 0 0 12px #fff; }
-#title .yomi { margin: 4px 0 4vh; letter-spacing: 0.4em; font-size: 15px; }
+#title h1 { font-size: clamp(36px, 8.5vh, 68px); font-weight: normal; letter-spacing: 0.25em; margin: 0 0 0 0.25em; text-shadow: 0 0 12px #fff; white-space: nowrap; }
+#title .yomi { margin: 6px 0 4vh; letter-spacing: 0.3em; font-size: 16px; text-shadow: 0 0 8px #fff; }
 #title .hint { font-size: 13px; margin-top: 2.5vh; opacity: 0.75; }
 .main-btn {
   font-size: 20px; letter-spacing: 0.3em; padding: 10px 28px 10px 34px; border: 1px solid var(--ink);
@@ -96,6 +99,8 @@ body.night #paper { opacity: 0.12; }
 .result td { text-align: right; padding: 2px 8px; }
 .result td b { font-size: 20px; font-weight: normal; }
 .result .best { font-size: 13px; opacity: 0.7; margin: 0; }
+.result .cheer { font-size: 15px; margin: 2px 0; letter-spacing: 0.08em; }
+.credit { font-size: 11px; color: inherit; opacity: 0.65; letter-spacing: 0.12em; text-decoration: none; border-bottom: 1px solid rgba(0,0,0,0.3); }
 .result .story { font-size: 13px; max-width: 420px; line-height: 1.6; margin: 4px 0; opacity: 0.8; }
 .result .buttons { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: center; }
 .link-btn {
@@ -108,12 +113,47 @@ body.night #paper { opacity: 0.12; }
 .rotate-icon { animation: tilt 2s ease-in-out infinite; }
 @keyframes tilt { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
 
+/* ---- クリア：大だるま絵（仮の絵） ---- */
+#clear { background: rgba(233,230,223,0.92); z-index: 4; }
+#clear-stage { display: flex; flex-direction: column; align-items: center; gap: 1vh; }
+#daruma-art { height: 72vh; height: 72dvh; width: auto; }
+#daruma-art .sheet { fill: #fbf8f0; stroke: #b9b2a4; stroke-width: 1.5; }
+#daruma-art path, #daruma-art circle:not(.pupil) {
+  fill: none; stroke: #1d1b19; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+}
+#daruma-art .s5 path { stroke: var(--shu); stroke-width: 9; }
+#daruma-art .s1 path { stroke-width: 4; }
+#daruma-art .pupil { fill: #1d1b19; opacity: 0; }
+/* 記録どおり 眉間 → 鼻 → 目 → 顔の輪郭 → 衣 の順に描く */
+#clear-stage.drawing path, #clear-stage.drawing circle:not(.pupil) { animation: draw 1s ease-out forwards; }
+#clear-stage.drawing .pupil { animation: appear 0.3s forwards; animation-delay: 2.8s; }
+#clear-stage.drawing .s1 * { animation-delay: 0.3s; }
+#clear-stage.drawing .s2 * { animation-delay: 1.2s; }
+#clear-stage.drawing .s3 * { animation-delay: 2.0s; }
+#clear-stage.drawing .s4 * { animation-delay: 3.1s; }
+#clear-stage.drawing .s5 * { animation-delay: 4.3s; }
+#clear-stage.done path, #clear-stage.done circle { animation: none !important; stroke-dashoffset: 0; opacity: 1; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes appear { to { opacity: 1; } }
+#clear-title { font-size: 26px; letter-spacing: 0.3em; margin: 0; opacity: 0; }
+#clear-stage.drawing #clear-title { animation: appear 0.8s forwards; animation-delay: 5.5s; }
+#clear-stage.done #clear-title { opacity: 1; }
+#skip-hint { font-size: 12px; opacity: 0.6; margin: 0; }
+#clear-stage.done #skip-hint { display: none; }
+/* 描き上がったら、絵を左に寄せてクリア画面を重ねる */
+#clear:has(#clear-panel:not([hidden])) { flex-direction: row; gap: 3vw; }
+#clear-stage.done #daruma-art { height: 62vh; height: 62dvh; }
+
 /* 背の低い画面（スマホ横持ち）では詰める */
 @media (max-height: 460px) {
-  #score .dist b { font-size: 24px; }
+  #score b { font-size: 30px; }
+  #clear-title { font-size: 20px; }
   .result .big b { font-size: 32px; }
   .panel { padding: 10px 24px; gap: 4px; }
-  .result .story { font-size: 12px; margin: 0; }
+  .result .cheer { font-size: 15px; margin: 2px 0; letter-spacing: 0.08em; }
+.credit { font-size: 11px; color: inherit; opacity: 0.65; letter-spacing: 0.12em; text-decoration: none; border-bottom: 1px solid rgba(0,0,0,0.3); }
+.result .story { font-size: 12px; margin: 0; }
   .main-btn { font-size: 17px; padding: 7px 20px 7px 26px; }
   .link-btn { font-size: 13px; padding: 7px 12px; }
   .sub-btn { padding: 2px 12px; font-size: 13px; }

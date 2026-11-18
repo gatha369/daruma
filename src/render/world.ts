@@ -1,12 +1,13 @@
 // 3Dの表示。ゲームの状態（Sim）を受け取って、水墨画風に描く
 import * as THREE from 'three';
 import { BANK_X, RIVER_HALF_WIDTH, clamp } from '../game/logic';
-import { Sim, CAPSIZE_TIME, WAVE_TIME, BEAD_RADIUS } from '../game/sim';
-import { Bead, Log, Rock, Wave, Whirl, logX, waveZ } from '../game/course';
+import { Sim, CAPSIZE_TIME, WAVE_TIME, GLOW_WARN } from '../game/sim';
+import { Washi, Nenju, Log, Rock, Wave, Whirl, logX, waveZ } from '../game/course';
+import { NENJU_BEADS, NENJU_BEAD_R, OYADAMA_R, nenjuBead, oyadamaPos, glowLevel } from '../game/rosary';
 import { placeCamera, fitFov } from '../game/camera';
 import { Palette, RGB, paletteAt } from '../game/scenery';
 import { QualitySettings } from '../game/quality';
-import { toon, outlineMaterial, setRGB, whirlTexture, strokeTexture, mulberry } from './textures';
+import { toon, outlineMaterial, setRGB, whirlTexture, strokeTexture, mulberry, discTexture } from './textures';
 import { Water } from './water';
 import { Backdrop } from './backdrop';
 import { Wake } from './wake';
@@ -36,7 +37,12 @@ export class World {
   private geo = {
     rock: new THREE.DodecahedronGeometry(1, 0),
     log: new THREE.CylinderGeometry(1, 0.85, 1, 10),
-    bead: new THREE.SphereGeometry(BEAD_RADIUS, 12, 8),
+    washi: washiGeometry(),
+    washiEdge: new THREE.PlaneGeometry(0.78, 0.78),
+    nenjuBead: new THREE.SphereGeometry(NENJU_BEAD_R, 12, 8),
+    oyadama: new THREE.SphereGeometry(OYADAMA_R, 14, 10),
+    tassel: new THREE.ConeGeometry(0.08, 0.34, 10),
+    glow: new THREE.PlaneGeometry(1, 1),
     whirl: new THREE.PlaneGeometry(1, 1),
     wave: new THREE.CylinderGeometry(0.5, 0.5, (BANK_X + 0.6) * 2, 16),
     streak: new THREE.PlaneGeometry(1.4, 0.18),
@@ -45,7 +51,11 @@ export class World {
   private mat = {
     rock: toon(0x34322f),
     log: toon(0x4a4038),
-    bead: toon(0x7b4a24, { emissive: 0x2a1408 }),
+    washi: toon(0xfbf8f0, { side: THREE.DoubleSide }),
+    washiEdge: new THREE.MeshBasicMaterial({ color: 0x3a3835, transparent: true, opacity: 0.55, depthWrite: false }),
+    nenju: toon(0x6b3d1e, { emissive: 0x3a1c08 }),
+    tassel: toon(0x8e2a22, { emissive: 0x2a0806 }),
+    nenjuGlow: new THREE.MeshBasicMaterial({ map: discTexture(0.8), color: 0xffd27a, transparent: true, opacity: 0.6, depthWrite: false }),
     whirl: new THREE.MeshBasicMaterial({ map: whirlTexture(), transparent: true, depthWrite: false }),
     wave: toon(0xf4f2ec),
     streak: new THREE.MeshBasicMaterial({ map: strokeTexture(), transparent: true, depthWrite: false }),
@@ -143,7 +153,7 @@ export class World {
     raft.rotation.set(0, Math.sin(t * 0.4) * 0.1, Math.sin(t * 1.1) * 0.08);
     this.raft.daruma.position.set(0, Math.sin(t * 1.7) * 0.04, 0);
     this.raft.daruma.rotation.set(0, 0, Math.sin(t * 1.3) * 0.06);
-    this.raft.setBeads(0);
+    this.raft.setGlow(0, t);
     this.raft.animate(t, dt, 0, 1.5, 0);
     this.clearObstacles();
     this.wake.update(0, z + 1.25, t, this.palette.ink);
@@ -157,7 +167,7 @@ export class World {
   render(sim: Sim, t: number, dt: number, sinceRecover: number) {
     const z = -sim.distance;
     this.leafZ = z;
-    this.palette = paletteAt(sim.distance);
+    this.palette = paletteAt(sim.progress);
     this.applyPalette(this.palette, t);
     const p = sim.player;
     const raft = this.raft.group;
@@ -166,7 +176,7 @@ export class World {
     let roll = clamp(-p.vx * 0.06, -0.35, 0.35);
     if (waveK > 0) roll += Math.sin(t * 14) * 0.3 * waveK; // 大波で大きく揺れる
     raft.rotation.set(Math.sin(t * 2.1) * 0.02, clamp(-p.vx * 0.03, -0.2, 0.2), roll);
-    this.raft.setBeads(sim.beads);
+    this.raft.setGlow(glowLevel(sim.glowT, GLOW_WARN, t), t);
     this.raft.animate(t, dt, p.vx, sim.speed, waveK);
     this.animateDaruma(sim, t, sinceRecover);
     raft.visible = !(sim.invulnerable && Math.floor(t * 10) % 2 === 0); // 無敵の間は点滅
@@ -179,11 +189,21 @@ export class World {
     this.renderer.render(this.scene, this.camera);
   }
 
-  /** 珠を拾った：その場に小さな光の輪 */
-  collect(bead: Bead) {
-    const m = this.meshes.get(bead);
-    if (m) { this.scene.remove(m); this.meshes.delete(bead); }
-    this.ripple(bead.x, -bead.z, 0.6, 0.45, [1, 0.85, 0.6]);
+  /** 和紙を拾った：その場に小さな墨の輪 */
+  collect(w: Washi) {
+    this.removeMesh(w);
+    this.ripple(w.x, -w.z, 0.6, 0.45, this.palette.ink);
+  }
+
+  /** 念珠を拾った：水面に光の輪が広がる */
+  nenju(n: Nenju) {
+    this.removeMesh(n);
+    for (let i = 0; i < 3; i++) this.ripple(n.x, -n.z, 2 + i, 1, [1, 0.8, 0.4], i * 0.12);
+  }
+
+  private removeMesh(key: object) {
+    const m = this.meshes.get(key);
+    if (m) { this.scene.remove(m); this.meshes.delete(key); }
   }
 
   /** 水に落ちた（big）・葉に戻った */
@@ -192,14 +212,7 @@ export class World {
     if (big) this.ripple(x, z, 1.4, 0.8, this.palette.ink, 0.15);
   }
 
-  /** 念珠の完成：親珠と房が付き、達磨が手に掛ける。水面に光の輪が広がる */
-  rosary(sim: Sim) {
-    this.raft.startRosary();
-    for (let i = 0; i < 3; i++) this.ripple(sim.player.x, -sim.distance, 3 + i, 1.2, [1, 0.88, 0.62], i * 0.15);
-  }
-
-  get rosaryPlaying() { return this.raft.rosaryPlaying; }
-  get wearingRosary() { return this.raft.wearing; }
+  get glowing() { return this.raft.glowing; }
 
   reset() {
     this.clearObstacles();
@@ -353,10 +366,21 @@ export class World {
         }
       }
     }
-    for (const b of sim.course.beads) {
-      if (b.taken) continue;
-      const m = this.getMesh(b, () => new THREE.Mesh(this.geo.bead, this.mat.bead));
-      m.position.set(b.x, 0.15 + Math.sin(t * 3 + b.id) * 0.06, -b.z); // ぷかぷか
+    for (const w of sim.course.washi) {
+      if (w.taken) continue;
+      const m = this.getMesh(w, () => this.makeWashi(w.id));
+      // 水面に浮いて、少し揺れる
+      m.position.set(w.x, 0.06 + Math.sin(t * 2.5 + w.id) * 0.03, -w.z);
+      m.rotation.set(Math.sin(t * 1.8 + w.id) * 0.08, (w.id * 0.7) % Math.PI, Math.sin(t * 2.1 + w.id * 2) * 0.08);
+    }
+    for (const n of sim.course.nenjus) {
+      if (n.taken) continue;
+      const m = this.getMesh(n, () => this.makeNenju());
+      m.position.set(n.x, 0.12 + Math.sin(t * 2.4 + n.id) * 0.05, -n.z);
+      m.rotation.y = t * 0.8;
+      const glow = m.userData.glow as THREE.Mesh;
+      glow.rotation.z = -t * 0.8; // 光は回さない（輪と一緒に回る分を打ち消す）
+      glow.scale.setScalar(2.2 + Math.sin(t * 4) * 0.2);
     }
     for (const [key, m] of this.meshes) {
       if (!this.seen.has(key)) {
@@ -364,6 +388,46 @@ export class World {
         this.meshes.delete(key);
       }
     }
+  }
+
+  /** 和紙：白い四角の紙。少し波打っていて、縁に墨の影 */
+  private makeWashi(id: number): THREE.Object3D {
+    const g = new THREE.Group();
+    const paper = new THREE.Mesh(this.geo.washi, this.mat.washi);
+    g.add(paper);
+    const edge = new THREE.Mesh(this.geo.washiEdge, this.mat.washiEdge);
+    edge.rotation.x = -Math.PI / 2;
+    edge.position.y = -0.03;
+    g.add(edge);
+    g.userData.id = id;
+    return g;
+  }
+
+  /** 念珠：玉9個と親玉1つの輪に、親玉から簡単な房（簡略化した形）。まわりに光をまとう */
+  private makeNenju(): THREE.Object3D {
+    const g = new THREE.Group();
+    const glow = new THREE.Mesh(this.geo.glow, this.mat.nenjuGlow);
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.y = -0.05;
+    g.add(glow);
+    g.userData.glow = glow;
+    const ring = new THREE.InstancedMesh(this.geo.nenjuBead, this.mat.nenju, NENJU_BEADS);
+    const mtx = new THREE.Matrix4();
+    for (let i = 0; i < NENJU_BEADS; i++) {
+      const p = nenjuBead(i);
+      ring.setMatrixAt(i, mtx.makeTranslation(p.x, p.y, p.z));
+    }
+    g.add(ring);
+    const o = oyadamaPos();
+    const oya = new THREE.Mesh(this.geo.oyadama, this.mat.nenju);
+    oya.position.set(o.x, o.y, o.z);
+    g.add(oya);
+    const tassel = new THREE.Mesh(this.geo.tassel, this.mat.tassel);
+    tassel.position.set(o.x, o.y, o.z + OYADAMA_R + 0.15);
+    tassel.rotation.x = -Math.PI / 2; // 房は水面に寝かせ、親玉の側を細く、輪の外へ広がるように
+    g.add(tassel);
+    g.scale.setScalar(1.15);
+    return g;
   }
 
   /** 横向きの流れがある場所に、流れる向きへ動く筋を出す */
@@ -386,4 +450,18 @@ export class World {
       mat.opacity = Math.min(1, Math.abs(strength) / 2.6) * 0.6;
     });
   }
+}
+
+/** 和紙の形：少し波打った四角い紙 */
+function washiGeometry(): THREE.BufferGeometry {
+  const geo = new THREE.PlaneGeometry(0.7, 0.7, 6, 6);
+  geo.rotateX(-Math.PI / 2);
+  const p = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i);
+    const z = p.getZ(i);
+    p.setY(i, 0.03 * Math.sin(x * 9 + 1) + 0.025 * Math.sin(z * 7));
+  }
+  geo.computeVertexNormals();
+  return geo;
 }

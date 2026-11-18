@@ -1,49 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import { STAGES, STAGE_LENGTH, TRANSITION, stageAt, paletteAt } from '../src/game/scenery';
+import { paletteAt, MORNING } from '../src/game/scenery';
 import { QualityController, SETTINGS, initialLevel, WINDOW, SETTLE } from '../src/game/quality';
-import { feetBead, wornBead, liftBead, WORN } from '../src/game/rosary';
-import { ROSARY_SIZE } from '../src/game/sim';
+import {
+  NENJU_BEADS, NENJU_BEAD_R, OYADAMA_R, nenjuBead, oyadamaPos, glowLevel, rainbowHue,
+} from '../src/game/rosary';
+import { GLOW_WARN } from '../src/game/sim';
 
-describe('距離に応じた景色の変化（霧 → 夕暮れ → 月夜 をくり返す）', () => {
-  const name = (d: number) => {
-    const s = stageAt(d);
-    return STAGES[s.t < 0.5 ? s.from : s.to].name;
-  };
-  it('10里ごとに景色が変わり、3つ目のあとは最初に戻る', () => {
-    expect(name(0)).toBe('霧');
-    expect(name(STAGE_LENGTH * 0.5)).toBe('霧');
-    expect(name(STAGE_LENGTH * 1.5)).toBe('夕暮れ');
-    expect(name(STAGE_LENGTH * 2.5)).toBe('月夜');
-    expect(name(STAGE_LENGTH * 3.5)).toBe('霧');
-  });
-
-  it('切り替わりは急ではなく、2里かけてなめらかに移る', () => {
-    const start = STAGE_LENGTH - TRANSITION;
-    expect(stageAt(start - 1).t).toBe(0);
-    const mid = stageAt(start + TRANSITION / 2).t;
-    expect(mid).toBeGreaterThan(0.3);
-    expect(mid).toBeLessThan(0.7);
-    // 少し進んだだけで色が大きく飛ばない
-    for (let d = 0; d < STAGE_LENGTH * 3; d += 5) {
-      const a = paletteAt(d).sky;
-      const b = paletteAt(d + 5).sky;
-      const diff = Math.max(...a.map((v, i) => Math.abs(v - b[i])));
-      expect(diff, `d=${d}`).toBeLessThan(0.05);
+describe('景色（霧→夕暮れ→月夜のくり返しは外した）', () => {
+  it('ずっと昼の景色で、和紙が集まるにつれて霧が晴れていく', () => {
+    expect(paletteAt(0).fogFar).toBe(MORNING.fogFar);
+    expect(paletteAt(1).fogFar).toBeGreaterThan(paletteAt(0).fogFar);
+    expect(paletteAt(1).mist).toBeLessThan(paletteAt(0).mist);
+    for (let k = 0; k <= 1; k += 0.05) {
+      const p = paletteAt(k);
+      expect(p.dark).toBe(0);
+      expect(p.moon).toBe(0);
+      expect(p.sky).toEqual(MORNING.sky);
     }
-  });
-
-  it('最初の霧は、進むにつれて晴れていく', () => {
-    expect(paletteAt(700).fogFar).toBeGreaterThan(paletteAt(0).fogFar);
-    expect(paletteAt(700).mist).toBeLessThan(paletteAt(0).mist);
-  });
-
-  it('夜は暗く、夕日と月はそれぞれの景色でだけ出る', () => {
-    const night = paletteAt(STAGE_LENGTH * 2.5);
-    expect(night.dark).toBe(1);
-    expect(night.moon).toBe(1);
-    expect(night.sun).toBe(0);
-    expect(paletteAt(STAGE_LENGTH * 1.5).sun).toBe(1);
-    expect(paletteAt(100).dark).toBe(0);
   });
 });
 
@@ -98,33 +71,44 @@ describe('重い端末向けの自動調整', () => {
   });
 });
 
-describe('念珠の珠の並び', () => {
-  it('足元の108個は、重ならずに一周する', () => {
-    const ps = Array.from({ length: ROSARY_SIZE }, (_, i) => feetBead(i));
-    for (let i = 0; i < ROSARY_SIZE; i++) {
+describe('念珠の形（玉8〜10個の輪に親玉と房）', () => {
+  const all = () => [oyadamaPos(), ...Array.from({ length: NENJU_BEADS }, (_, i) => nenjuBead(i))];
+
+  it('玉は8〜10個', () => {
+    expect(NENJU_BEADS).toBeGreaterThanOrEqual(8);
+    expect(NENJU_BEADS).toBeLessThanOrEqual(10);
+  });
+
+  it('親玉と玉が一つの輪に並び、となりどうしが重ならずにつながって見える', () => {
+    const ps = all();
+    for (let i = 0; i < ps.length; i++) {
       const a = ps[i];
-      const b = ps[(i + 1) % ROSARY_SIZE];
+      const b = ps[(i + 1) % ps.length];
       const d = Math.hypot(a.x - b.x, a.z - b.z);
-      expect(d).toBeGreaterThan(0.02);
-      expect(d).toBeLessThan(0.08); // 隣どうしがつながって見える間隔
+      const ra = i === 0 ? OYADAMA_R : NENJU_BEAD_R;
+      const rb = (i + 1) % ps.length === 0 ? OYADAMA_R : NENJU_BEAD_R;
+      expect(d, `i=${i}`).toBeGreaterThan(ra + rb - 0.03); // 大きく食い込まない
+      expect(d, `i=${i}`).toBeLessThan(ra + rb + 0.08); // 離れすぎない
     }
   });
 
-  it('手に掛けた念珠は達磨の体（半径0.42）の外側にある', () => {
-    for (let i = 0; i < ROSARY_SIZE; i++) {
-      const w = wornBead(i);
-      expect(Math.hypot(w.x, w.z)).toBeGreaterThan(0.42 * Math.cos(WORN.tilt) - 0.01);
-    }
+  it('親玉はほかの玉より大きい', () => {
+    expect(OYADAMA_R).toBeGreaterThan(NENJU_BEAD_R);
+  });
+});
+
+describe('無敵中の七色の光', () => {
+  it('色が順にめぐる', () => {
+    const hs = [0, 0.2, 0.4, 0.6].map(rainbowHue);
+    for (const h of hs) { expect(h).toBeGreaterThanOrEqual(0); expect(h).toBeLessThan(1); }
+    expect(new Set(hs.map((h) => h.toFixed(2))).size).toBe(4);
   });
 
-  it('完成の演出は足元から始まり、手に掛けた位置で終わる', () => {
-    for (const i of [0, 27, 54, 107]) {
-      expect(liftBead(i, 0)).toEqual(feetBead(i));
-      const end = liftBead(i, 1);
-      const w = wornBead(i);
-      expect(end.x).toBeCloseTo(w.x, 6);
-      expect(end.y).toBeCloseTo(w.y, 6);
-      expect(end.z).toBeCloseTo(w.z, 6);
-    }
+  it('残り2秒までは光りっぱなし、そこからは点滅、切れたら光らない', () => {
+    expect(glowLevel(5, GLOW_WARN, 0.1)).toBe(1);
+    expect(glowLevel(0, GLOW_WARN, 0.1)).toBe(0);
+    const levels = new Set<number>();
+    for (let t = 0; t < 1; t += 0.01) levels.add(glowLevel(1.5, GLOW_WARN, t));
+    expect(levels.size).toBe(2); // 明るい・暗いを行き来する
   });
 });

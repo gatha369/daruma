@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   RIVER_HALF_WIDTH, MAX_SPEED, START_SPEED, CAP_DISTANCE, LEAF_HIT_RADIUS, LEAF_HIT_OFFSET,
-  speedAt, stepPlayer, leafHitsCircle, leafHitsLog, formatRi, Player,
+  speedAt, stepPlayer, leafHitsCircle, leafHitsLog, formatTime, Player,
 } from '../src/game/logic';
 
 describe('前進のスピード', () => {
@@ -61,10 +61,11 @@ describe('当たり判定', () => {
   });
 });
 
-describe('距離の表示', () => {
-  it('里の単位で小数1桁', () => {
-    expect(formatRi(0)).toBe('0.0');
-    expect(formatRi(250)).toBe('2.5');
-    expect(formatRi(-5)).toBe('0.0');
+describe('時間の表示', () => {
+  it('〇分〇〇秒（秒は2桁、端数は切り捨て）', () => {
+    expect(formatTime(0)).toBe('0分00秒');
+    expect(formatTime(185.9)).toBe('3分05秒');
+    expect(formatTime(600)).toBe('10分00秒');
+    expect(formatTime(-3)).toBe('0分00秒');
   });
 });

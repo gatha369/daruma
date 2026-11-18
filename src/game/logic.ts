@@ -6,9 +6,7 @@ export const BANK_X = RIVER_HALF_WIDTH + 1.2; // 川岸の目印の位置
 // ---- 前進の速さ（4.2 / 4.5） ----
 export const START_SPEED = 8; // 前進の初速（1秒あたりの距離）
 export const MAX_SPEED = 18; // 速さの上限（人が反応できる範囲にとどめる）
-export const CAP_DISTANCE = 3000; // この距離（30里）で速さ・難しさが上限に達する
-
-export const UNITS_PER_RI = 100; // 画面上の「1里」にあたるゲーム内の距離（仮）
+export const CAP_DISTANCE = 2400; // この距離で速さ・難しさが上限に達する（120枚集めるころに合わせる・4.2）
 
 // ---- 左右の動き ----
 export const KEY_TARGET_SPEED = 11; // キー押しっぱなしで目標位置が動く速さ
@@ -82,9 +80,10 @@ export function leafHitsLog(px: number, pz: number, cx: number, cz: number, half
   });
 }
 
-/** 距離を「里」の表記にする */
-export function formatRi(distance: number): string {
-  return (Math.max(0, distance) / UNITS_PER_RI).toFixed(1);
+/** 秒を「〇分〇〇秒」の表記にする */
+export function formatTime(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(s / 60)}分${String(s % 60).padStart(2, '0')}秒`;
 }
 
 export type Rng = () => number;

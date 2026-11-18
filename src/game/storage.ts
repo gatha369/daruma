@@ -1,11 +1,17 @@
 // ベスト記録と設定の保存（ブラウザ内）。保存できない環境でもゲームは動くようにする
 
-export interface Best { distance: number; beads: number; rosaries: number }
-export interface RunResult { distance: number; beads: number; rosaries: number }
-export interface NewRecords { distance: boolean; beads: boolean; rosaries: boolean }
+export interface Best {
+  washi: number; // 集めた和紙の最多枚数
+  clearTime: number; // クリアまでの最短時間（秒）。0 はまだクリアしていない
+  lives: number; // クリアしたときの残り回数の最多（クリアしていなければ 0）
+}
+export type RunResult =
+  | { cleared: true; washi: number; clearTime: number; lives: number }
+  | { cleared: false; washi: number };
+export interface NewRecords { washi: boolean; clearTime: boolean; lives: boolean }
 
-const BEST_KEY = 'ichii-tokou:best';
-const SOUND_KEY = 'ichii-tokou:sound';
+const BEST_KEY = 'hokusai-daruma:best';
+const SOUND_KEY = 'hokusai-daruma:sound';
 
 /** localStorage と同じ形の入れ物（テストでは差し替える） */
 export interface KV { getItem(k: string): string | null; setItem(k: string, v: string): void }
@@ -14,19 +20,20 @@ function defaultKV(): KV | null {
   try { return window.localStorage; } catch { return null; }
 }
 
+const EMPTY: Best = { washi: 0, clearTime: 0, lives: 0 };
+
 export function loadBest(kv: KV | null = defaultKV()): Best {
-  const empty = { distance: 0, beads: 0, rosaries: 0 };
   try {
     const raw = kv?.getItem(BEST_KEY);
-    if (!raw) return empty;
+    if (!raw) return { ...EMPTY };
     const b = JSON.parse(raw);
     return {
-      distance: Number(b.distance) || 0,
-      beads: Number(b.beads) || 0,
-      rosaries: Number(b.rosaries) || 0,
+      washi: Number(b.washi) || 0,
+      clearTime: Number(b.clearTime) || 0,
+      lives: Number(b.lives) || 0,
     };
   } catch {
-    return empty;
+    return { ...EMPTY };
   }
 }
 
@@ -34,14 +41,14 @@ export function loadBest(kv: KV | null = defaultKV()): Best {
 export function recordRun(run: RunResult, kv: KV | null = defaultKV()): { best: Best; isNew: NewRecords } {
   const old = loadBest(kv);
   const isNew = {
-    distance: run.distance > old.distance,
-    beads: run.beads > old.beads,
-    rosaries: run.rosaries > old.rosaries,
+    washi: run.washi > old.washi,
+    clearTime: run.cleared && (old.clearTime === 0 || run.clearTime < old.clearTime),
+    lives: run.cleared && (old.clearTime === 0 || run.lives > old.lives),
   };
-  const best = {
-    distance: Math.max(old.distance, run.distance),
-    beads: Math.max(old.beads, run.beads),
-    rosaries: Math.max(old.rosaries, run.rosaries),
+  const best: Best = {
+    washi: Math.max(old.washi, run.washi),
+    clearTime: isNew.clearTime && run.cleared ? run.clearTime : old.clearTime,
+    lives: isNew.lives && run.cleared ? run.lives : old.lives,
   };
   try { kv?.setItem(BEST_KEY, JSON.stringify(best)); } catch { /* 保存できなくても続ける */ }
   return { best, isNew };

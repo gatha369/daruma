@@ -1,31 +1,36 @@
-// 1回のプレイの進行（前進・操作・障害物・転覆・珠）。画面表示とは切り離してある
+// 1回のプレイの進行（前進・操作・障害物・転覆・和紙・念珠）。画面表示とは切り離してある
 import {
   Player, Rng, makeRng, speedAt, stepPlayer, leafHitsCircle, leafHitsLog, leafCircles,
   LEAF_HIT_RADIUS,
 } from './logic';
-import { Course, Bead, Log, Rock, Wave, Whirl, logX, waveZ } from './course';
+import { Course, Washi, Nenju, Log, Rock, Wave, Whirl, logX, waveZ } from './course';
 
 export const MAX_LIVES = 3; // 転覆から戻れる回数（仮：3回）
-export const ROSARY_SIZE = 108; // 一連の念珠の珠の数
+export const WASHI_GOAL = 120; // 和紙をこの枚数（＝120畳）集めたらクリア
 export const CAPSIZE_TIME = 1.6; // 落ちてから葉に戻るまでの時間
 export const INVULN_TIME = 2; // 戻った直後に転覆しない時間
+export const GLOW_TIME = 8; // 念珠を拾ったときの無敵の長さ【仮：8秒】
+export const GLOW_WARN = 2; // 無敵が切れる何秒前から点滅させるか
 export const WAVE_TIME = 2.5; // 大波を受けて操作が効きにくい時間
 export const WAVE_CONTROL = 0.3; // そのあいだの操作の効き具合
 export const CURRENT_FORCE = 8; // 横向きの流れが葉を押す強さ
 export const WHIRL_FORCE = 30; // 渦が引き寄せる強さ（中心に近いほど強い）
-export const BEAD_RADIUS = 0.2;
+export const WASHI_RADIUS = 0.35; // 和紙の拾える大きさ
+export const NENJU_RADIUS = 0.45; // 念珠の拾える大きさ
 export const LOOK_AHEAD = 150; // どこまで先のコースを作っておくか
 
 export type Cause = 'rock' | 'log' | 'whirl';
 export type SimEvent =
   | { type: 'capsize'; cause: Cause }
   | { type: 'recover' }
-  | { type: 'collect'; bead: Bead }
-  | { type: 'rosary' }
+  | { type: 'collect'; washi: Washi }
+  | { type: 'nenju'; nenju: Nenju }
+  | { type: 'pass'; cause: Cause } // 念珠の無敵中に障害物をすり抜けた
   | { type: 'wave' }
+  | { type: 'clear' }
   | { type: 'gameover' };
 
-export type SimPhase = 'playing' | 'capsized' | 'over';
+export type SimPhase = 'playing' | 'capsized' | 'over' | 'cleared';
 
 export class Sim {
   time = 0;
@@ -33,14 +38,15 @@ export class Sim {
   player: Player = { x: 0, vx: 0, targetX: 0 };
   phase: SimPhase = 'playing';
   lives = MAX_LIVES;
-  beads = 0; // いま編んでいる念珠の珠の数（0〜107）
-  rosaries = 0; // 完成した念珠の数
-  totalBeads = 0; // このプレイで拾った珠の合計
+  washi = 0; // 集めた和紙の枚数
+  clearTime = 0; // クリアまでにかかった時間（秒）
   capsizeT = 0;
-  invulnT = 0;
+  invulnT = 0; // 転覆から戻った直後の無敵
+  glowT = 0; // 念珠の無敵（七色に光る）
   waveT = 0;
   course: Course;
   private rng: Rng;
+  private passed = new Set<object>(); // すり抜け中の障害物（同じものを何度も数えない）
 
   constructor(seed = Date.now()) {
     this.rng = makeRng(seed);
@@ -50,11 +56,16 @@ export class Sim {
 
   get speed() { return speedAt(this.distance); }
   get invulnerable() { return this.invulnT > 0; }
+  /** 念珠の無敵中か */
+  get glowing() { return this.glowT > 0; }
   /** いま操作がどれだけ効くか（大波のあとは下がる） */
   get control() { return this.waveT > 0 ? WAVE_CONTROL : 1; }
+  /** クリアまでの進み具合 0〜1 */
+  get progress() { return Math.min(1, this.washi / WASHI_GOAL); }
 
-  /** 渦が葉を引き寄せる横向きの力 */
+  /** 渦が葉を引き寄せる横向きの力（念珠の無敵中は効かない） */
   whirlPush(): number {
+    if (this.glowing) return 0;
     let push = 0;
     for (const w of this.nearby<Whirl>('whirl', WHIRL_PULL_RANGE)) {
       const d = Math.hypot(w.x - this.player.x, w.z - this.distance);
@@ -65,7 +76,7 @@ export class Sim {
 
   update(dt: number, targetX: number): SimEvent[] {
     const ev: SimEvent[] = [];
-    if (this.phase === 'over') return ev;
+    if (this.phase === 'over' || this.phase === 'cleared') return ev;
     this.time += dt;
 
     if (this.phase === 'capsized') {
@@ -90,14 +101,17 @@ export class Sim {
     this.player = stepPlayer({ ...this.player, targetX }, dt, { push, control: this.control });
     this.distance += this.speed * dt;
     this.invulnT = Math.max(0, this.invulnT - dt);
+    this.glowT = Math.max(0, this.glowT - dt);
     this.waveT = Math.max(0, this.waveT - dt);
     this.course.ensure(this.distance + LOOK_AHEAD, { time: this.time, distance: this.distance });
     this.course.prune(this.distance - 20);
 
     const { x } = this.player;
     const z = this.distance;
+    const touches = (px: number, pz: number, r: number) =>
+      Math.abs(pz - z) < 2 && leafCircles(x, z).some(([cx, cz]) => Math.hypot(px - cx, pz - cz) < r + LEAF_HIT_RADIUS + 0.25);
 
-    // ---- 大波：横切ると大きく揺れて、しばらく操作が効きにくい ----
+    // ---- 大波：横切ると大きく揺れて、しばらく操作が効きにくい（念珠の無敵中も揺れは残す） ----
     for (const row of this.course.rows) {
       if (row.type !== 'wave') continue;
       const w = row.obstacles[0] as Wave;
@@ -109,33 +123,42 @@ export class Sim {
       }
     }
 
-    // ---- 念珠の珠を拾う ----
-    for (const b of this.course.beads) {
-      if (b.taken || Math.abs(b.z - z) > 2) continue;
-      const near = leafCircles(x, z).some(([cx, cz]) =>
-        Math.hypot(b.x - cx, b.z - cz) < BEAD_RADIUS + LEAF_HIT_RADIUS + 0.25);
-      if (!near) continue;
-      b.taken = true;
-      this.beads += 1;
-      this.totalBeads += 1;
-      ev.push({ type: 'collect', bead: b });
-      if (this.beads >= ROSARY_SIZE) {
-        this.beads = 0;
-        this.rosaries += 1;
-        this.lives = Math.min(MAX_LIVES, this.lives + 1); // ご褒美（仮）：1回回復
-        ev.push({ type: 'rosary' });
+    // ---- 念珠を拾う：一定時間 無敵（もう一つ拾ったら、はじめからに戻す） ----
+    for (const n of this.course.nenjus) {
+      if (n.taken || !touches(n.x, n.z, NENJU_RADIUS)) continue;
+      n.taken = true;
+      this.glowT = GLOW_TIME;
+      ev.push({ type: 'nenju', nenju: n });
+    }
+
+    // ---- 和紙を拾う ----
+    for (const w of this.course.washi) {
+      if (w.taken || !touches(w.x, w.z, WASHI_RADIUS)) continue;
+      w.taken = true;
+      this.washi += 1;
+      ev.push({ type: 'collect', washi: w });
+      if (this.washi >= WASHI_GOAL) {
+        this.phase = 'cleared';
+        this.clearTime = this.time;
+        ev.push({ type: 'clear' });
+        return ev;
       }
     }
 
-    // ---- 障害物にぶつかったら転覆 ----
+    // ---- 障害物にぶつかったら転覆。念珠の無敵中は、すり抜ける ----
     if (!this.invulnerable) {
-      const cause = this.findHit();
-      if (cause) {
+      const hit = this.findHit();
+      if (hit && this.glowing) {
+        if (!this.passed.has(hit.obj)) {
+          this.passed.add(hit.obj);
+          ev.push({ type: 'pass', cause: hit.cause });
+        }
+      } else if (hit) {
         this.phase = 'capsized';
         this.capsizeT = CAPSIZE_TIME;
         this.waveT = 0;
         this.player.vx = 0;
-        ev.push({ type: 'capsize', cause });
+        ev.push({ type: 'capsize', cause: hit.cause });
       }
     }
     return ev;
@@ -150,17 +173,17 @@ export class Sim {
     return out;
   }
 
-  private findHit(): Cause | null {
+  private findHit(): { cause: Cause; obj: object } | null {
     const { x } = this.player;
     const z = this.distance;
     for (const r of this.nearby<Rock>('rock', 4)) {
-      if (leafHitsCircle(x, z, r.x, r.z, r.r)) return 'rock';
+      if (leafHitsCircle(x, z, r.x, r.z, r.r)) return { cause: 'rock', obj: r };
     }
     for (const l of this.nearby<Log>('log', 2)) {
-      if (leafHitsLog(x, z, logX(l, this.time), l.z, l.half, l.r)) return 'log';
+      if (leafHitsLog(x, z, logX(l, this.time), l.z, l.half, l.r)) return { cause: 'log', obj: l };
     }
     for (const w of this.nearby<Whirl>('whirl', WHIRL_PULL_RANGE)) {
-      if (Math.hypot(w.x - x, w.z - z) < w.core) return 'whirl';
+      if (Math.hypot(w.x - x, w.z - z) < w.core) return { cause: 'whirl', obj: w };
     }
     return null;
   }

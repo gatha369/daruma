@@ -1,4 +1,4 @@
-// コース（障害物・念珠の珠・横向きの流れ）の作り方
+// コース（障害物・和紙・念珠・横向きの流れ）の作り方
 import {
   RIVER_HALF_WIDTH, Rng, clamp, difficultyAt, smoothstep, speedAt,
 } from './logic';
@@ -13,7 +13,10 @@ export interface Whirl { kind: 'whirl'; x: number; z: number; pull: number; core
 export interface Wave { kind: 'wave'; z0: number; speed: number; hit: boolean }
 export type Obstacle = Rock | Log | Whirl | Wave;
 
-export interface Bead { id: number; x: number; z: number; taken: boolean }
+/** 水面に浮かぶ和紙（1枚ずつ） */
+export interface Washi { id: number; x: number; z: number; taken: boolean }
+/** お助けの念珠（拾うと無敵） */
+export interface Nenju { id: number; x: number; z: number; taken: boolean }
 export interface Current { z0: number; z1: number; strength: number }
 
 export type RowType = 'rocks' | 'log' | 'whirl' | 'wave';
@@ -23,7 +26,8 @@ export const logX = (l: Log, time: number) => l.x0 + l.vx * time;
 export const waveZ = (w: Wave, time: number) => w.z0 - w.speed * time;
 
 // ---- 調整用の値 ----
-export const ROW_SPACING = 14; // 列と列の前後の間隔
+// 障害物の頻度：これまでの列の間隔14を約1.3倍の頻度に詰める【仮：4.4】
+export const ROW_SPACING = 10.8; // 列と列の前後の間隔
 export const GAP_WIDTH = 3.2; // 岩の列に必ず残す通り抜けの隙間（岩の縁から縁まで）
 export const MAX_GAP_SHIFT = 4; // 列ごとに隙間がずれる最大量
 export const WHIRL_PULL = 3.0;
@@ -31,6 +35,12 @@ export const WHIRL_CORE = 0.55;
 export const WAVE_SPEED = 3;
 /** 各障害物が出始める距離（最初の10秒ほどは岩だけにする） */
 export const INTRO = { log: 90, current: 150, whirl: 200, wave: 320 };
+/** 和紙の出やすさ（列ごとの確率）。クリアまでの長さ（4.3）に合わせて調整する */
+export const WASHI_ON_PATH = 0.85;
+export const WASHI_NEAR_ROCK = 0.35;
+/** 念珠の出る間隔【仮：1プレイに3〜4回】最初の1つが出る距離と、そのあとの間隔（最小・最大） */
+export const NENJU_FIRST = 500;
+export const NENJU_SPACING: [number, number] = [550, 750];
 /** その列のあとに空ける追加の間隔 */
 const EXTRA_SPACE: Record<RowType, number> = { rocks: 0, log: 4, whirl: 6, wave: 14 };
 
@@ -88,8 +98,8 @@ export function makeWaveRow(z: number, prevGapX: number, now: Now): Row {
   return { z, type: 'wave', gapX: prevGapX, obstacles: [wave] };
 }
 
-/** 珠の位置が障害物に重ならないか */
-export function beadIsSafe(x: number, z: number, rows: Row[], margin = 0.45): boolean {
+/** 和紙・念珠の位置が障害物に重ならないか */
+export function spotIsSafe(x: number, z: number, rows: Row[], margin = 0.45): boolean {
   if (Math.abs(x) > RIVER_HALF_WIDTH - 0.2) return false;
   for (const row of rows) {
     for (const o of row.obstacles) {
@@ -102,13 +112,15 @@ export function beadIsSafe(x: number, z: number, rows: Row[], margin = 0.45): bo
 
 export class Course {
   rows: Row[] = [];
-  beads: Bead[] = [];
+  washi: Washi[] = [];
+  nenjus: Nenju[] = [];
   currents: Current[] = [];
   private nextZ: number;
   private lastGapX = 0;
   private lastType: RowType = 'rocks';
   private nextCurrentZ = INTRO.current;
-  private beadId = 0;
+  private itemId = 0;
+  private nextNenjuZ = NENJU_FIRST;
 
   constructor(private rng: Rng, firstRowZ = 30) {
     this.nextZ = firstRowZ;
@@ -123,7 +135,8 @@ export class Course {
   /** 後ろに流れたものを片付ける */
   prune(behind: number) {
     this.rows = this.rows.filter((r) => r.z > behind || (r.type === 'wave' && !(r.obstacles[0] as Wave).hit));
-    this.beads = this.beads.filter((b) => b.z > behind);
+    this.washi = this.washi.filter((b) => b.z > behind);
+    this.nenjus = this.nenjus.filter((b) => b.z > behind);
     this.currents = this.currents.filter((c) => c.z1 > behind);
   }
 
@@ -166,55 +179,59 @@ export class Course {
     else if (type === 'wave') row = makeWaveRow(z, this.lastGapX, now);
     else row = makeRockRow(z, this.lastGapX, lv, this.rng);
     this.rows.push(row);
-    this.addBeads(row, prevZ, this.lastGapX, lv);
+    this.addWashi(row, prevZ, this.lastGapX, lv);
+    this.addNenju(row, prevZ, this.lastGapX);
     this.lastGapX = row.gapX;
     this.lastType = type;
     this.nextZ = z + ROW_SPACING + EXTRA_SPACE[type];
   }
 
-  private pushBead(x: number, z: number) {
-    if (beadIsSafe(x, z, this.rows.slice(-3))) {
-      this.beads.push({ id: this.beadId++, x, z, taken: false });
+  private pushWashi(x: number, z: number) {
+    if (spotIsSafe(x, z, this.rows.slice(-3))) {
+      this.washi.push({ id: this.itemId++, x, z, taken: false });
     }
   }
 
-  /** 珠を置く。弧の並び・1個ずつ・障害物のそば（危ないところほど多め） */
-  private addBeads(row: Row, prevZ: number, prevGapX: number, lv: number) {
+  /**
+   * 和紙を置く（4.3）：1枚ずつ、ときどき。通り道の上か、障害物のそば（危ない所を攻めると得をする）
+   * これまでの念珠の珠よりずっと少なく、弧を描いて並べることはしない
+   */
+  private addWashi(row: Row, prevZ: number, prevGapX: number, lv: number) {
     const rng = this.rng;
     if (row.type === 'rocks' || row.type === 'wave') {
-      // 前の通り道から、この列の隙間へと弧を描く並び（なぞると気持ちよく拾える）
-      if (rng() < 0.6) {
-        const n = 5 + Math.floor(rng() * 3);
-        const z0 = prevZ + 4;
-        for (let i = 0; i < n; i++) {
-          const t = i / (n - 1);
-          this.pushBead(prevGapX + (row.gapX - prevGapX) * smoothstep(t), z0 + (row.z - z0) * t);
-        }
-      } else if (rng() < 0.5) {
-        this.pushBead(row.gapX, row.z - 5);
+      // 前の通り道からこの列の隙間へ向かう途中に1枚
+      if (rng() < WASHI_ON_PATH) {
+        const t = 0.35 + rng() * 0.4;
+        this.pushWashi(prevGapX + (row.gapX - prevGapX) * smoothstep(t), prevZ + (row.z - prevZ) * t);
       }
     }
     if (row.type === 'rocks') {
-      // 岩のすぐそばの1個（危険を冒すと得をする）
+      // 岩のすぐそばの1枚
       const rocks = row.obstacles as Rock[];
-      if (rocks.length && rng() < 0.3 + 0.3 * lv) {
+      if (rocks.length && rng() < WASHI_NEAR_ROCK + 0.1 * lv) {
         const rock = rocks[Math.floor(rng() * rocks.length)];
         const side = rng() < 0.5 ? -1 : 1;
-        this.pushBead(rock.x + side * (rock.r + 0.75), rock.z);
+        this.pushWashi(rock.x + side * (rock.r + 0.75), rock.z);
       }
     } else if (row.type === 'whirl') {
-      // 渦の引き込み範囲の中、通り道の側に半円の並び
+      // 渦の引き込み範囲の中、通り道の側に1枚
       const w = row.obstacles[0] as Whirl;
       const toward = Math.sign(row.gapX - w.x) || 1;
-      for (let i = 0; i < 5; i++) {
-        const a = (-0.5 + i / 4) * Math.PI * 0.9;
-        this.pushBead(w.x + toward * Math.cos(a) * 1.8, w.z + Math.sin(a) * 1.8);
-      }
+      this.pushWashi(w.x + toward * 1.8, w.z);
     } else if (row.type === 'log') {
-      // 流木の通り道の上に縦に3個
-      const x = (rng() * 2 - 1) * 3.5;
-      for (let i = -1; i <= 1; i++) this.pushBead(x, row.z + i * 1.2);
+      // 流木の通り道の上に1枚
+      this.pushWashi((rng() * 2 - 1) * 3.5, row.z);
     }
+  }
+
+  /** 念珠を置く（4.5）：ときどき、岩の列の手前の通り道に（和紙よりずっと珍しい） */
+  private addNenju(row: Row, prevZ: number, prevGapX: number) {
+    if (row.z < this.nextNenjuZ || row.type !== 'rocks') return;
+    const z = (prevZ + row.z) / 2;
+    const x = (prevGapX + row.gapX) / 2;
+    if (!spotIsSafe(x, z, this.rows.slice(-3), 0.7)) return;
+    this.nenjus.push({ id: this.itemId++, x, z, taken: false });
+    this.nextNenjuZ = row.z + NENJU_SPACING[0] + this.rng() * (NENJU_SPACING[1] - NENJU_SPACING[0]);
   }
 
   private addCurrent() {

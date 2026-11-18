@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  Sim, SimEvent, MAX_LIVES, ROSARY_SIZE, CAPSIZE_TIME, INVULN_TIME, WAVE_TIME, WAVE_CONTROL,
+  Sim, SimEvent, MAX_LIVES, WASHI_GOAL, CAPSIZE_TIME, INVULN_TIME, WAVE_TIME, WAVE_CONTROL, GLOW_TIME,
 } from '../src/game/sim';
 import { Row, Rock, Log, Whirl, Wave, logX } from '../src/game/course';
+import { autopilotTarget } from './autopilot';
 
 const DT = 1 / 60;
 
@@ -10,7 +11,8 @@ const DT = 1 / 60;
 function emptySim(): Sim {
   const s = new Sim(1);
   s.course.rows = [];
-  s.course.beads = [];
+  s.course.washi = [];
+  s.course.nenjus = [];
   s.course.currents = [];
   return s;
 }
@@ -148,65 +150,139 @@ describe('横向きの流れ', () => {
   });
 });
 
-describe('念珠の珠', () => {
-  it('葉で触れると拾え、数が増える', () => {
+const washiAt = (x: number, z: number, id = 1) => ({ id, x, z, taken: false });
+
+describe('和紙（120枚でクリア）', () => {
+  it('葉で触れると拾え、枚数が増える。離れたものは拾わない', () => {
     const s = emptySim();
-    s.course.beads = [{ id: 1, x: 0, z: 5, taken: false }, { id: 2, x: 0.3, z: 7, taken: false }, { id: 3, x: 4, z: 7, taken: false }];
+    s.course.washi = [washiAt(0, 5, 1), washiAt(0.3, 7, 2), washiAt(4, 7, 3)];
     const ev = run(s, 1.5);
-    expect(ev.filter((e) => e.type === 'collect')).toHaveLength(2); // 離れた1個は拾わない
-    expect(s.beads).toBe(2);
-    expect(s.totalBeads).toBe(2);
+    expect(ev.filter((e) => e.type === 'collect')).toHaveLength(2);
+    expect(s.washi).toBe(2);
   });
 
-  it('108個で一連の念珠が完成：カウントは0に戻り、完成数が1増え、残り回数が1回回復', () => {
+  it('120枚目を拾うとクリア：ゲームが止まり、かかった時間が残る', () => {
     const s = emptySim();
-    s.beads = ROSARY_SIZE - 1;
-    s.totalBeads = ROSARY_SIZE - 1;
-    s.lives = 1;
-    s.course.beads = [{ id: 1, x: 0, z: 5, taken: false }];
-    expect(types(run(s, 1))).toContain('rosary');
-    expect(s.beads).toBe(0);
-    expect(s.rosaries).toBe(1);
-    expect(s.totalBeads).toBe(ROSARY_SIZE);
-    expect(s.lives).toBe(2);
+    s.washi = WASHI_GOAL - 1;
+    s.course.washi = [washiAt(0, 5)];
+    const ev = run(s, 1.5);
+    expect(types(ev)).toContain('clear');
+    expect(s.washi).toBe(WASHI_GOAL);
+    expect(s.phase).toBe('cleared');
+    expect(s.clearTime).toBeGreaterThan(0.3);
+    expect(s.clearTime).toBeLessThan(1.5);
+    const d = s.distance;
+    expect(run(s, 1)).toEqual([]); // クリア後は何も起きない
+    expect(s.distance).toBe(d);
   });
 
-  it('回復は最初の回数まで', () => {
+  it('転覆しても拾った和紙は減らない', () => {
     const s = emptySim();
-    s.beads = ROSARY_SIZE - 1;
-    s.course.beads = [{ id: 1, x: 0, z: 5, taken: false }];
-    run(s, 1);
-    expect(s.lives).toBe(MAX_LIVES);
-  });
-
-  it('転覆しても拾った珠は減らない', () => {
-    const s = emptySim();
-    s.course.beads = [{ id: 1, x: 0, z: 3, taken: false }];
+    s.course.washi = [washiAt(0, 3)];
     addRock(s, 0, 8);
     run(s, 1 + CAPSIZE_TIME);
-    expect(s.beads).toBe(1);
+    expect(s.washi).toBe(1);
   });
 });
 
+describe('念珠（お助けアイテム）', () => {
+  const nenjuAt = (x: number, z: number, id = 1) => ({ id, x, z, taken: false });
+
+  it('拾うと8秒の無敵になり、岩にぶつかっても転覆せずにすり抜ける', () => {
+    const s = emptySim();
+    s.course.nenjus = [nenjuAt(0, 4)];
+    addRock(s, 0, 15);
+    addRock(s, 0, 30);
+    const ev = run(s, 3);
+    expect(types(ev)).toContain('nenju');
+    expect(types(ev)).toContain('pass');
+    expect(types(ev)).not.toContain('capsize');
+    expect(s.glowing).toBe(true);
+    expect(s.phase).toBe('playing');
+  });
+
+  it('流木と渦もすり抜け、渦に引き寄せられない', () => {
+    const s = emptySim();
+    s.glowT = GLOW_TIME;
+    const log: Log = { kind: 'log', z: 8, x0: 0, vx: 0, half: 1.5, r: 0.28 };
+    const w: Whirl = { kind: 'whirl', x: 1.5, z: 22, pull: 3, core: 0.55, spin: 1 };
+    s.course.rows.push({ z: 8, type: 'log', gapX: 0, obstacles: [log] }, { z: 22, type: 'whirl', gapX: 0, obstacles: [w] });
+    let maxX = 0;
+    const ev: SimEvent[] = [];
+    for (let t = 0; t < 3; t += DT) { ev.push(...s.update(DT, 0)); maxX = Math.max(maxX, s.player.x); }
+    expect(types(ev)).not.toContain('capsize');
+    expect(maxX).toBeLessThan(0.05);
+  });
+
+  it('大波の揺れは無敵中も残る', () => {
+    const s = emptySim();
+    s.glowT = GLOW_TIME;
+    const wave: Wave = { kind: 'wave', z0: 10, speed: 3, hit: false };
+    s.course.rows.push({ z: 10, type: 'wave', gapX: 0, obstacles: [wave] });
+    expect(types(run(s, 1.5))).toContain('wave');
+    expect(s.control).toBe(WAVE_CONTROL);
+  });
+
+  it('8秒たつと無敵が切れ、また岩で転覆する', () => {
+    const s = emptySim();
+    s.course.nenjus = [nenjuAt(0, 4)];
+    run(s, 0.6);
+    expect(s.glowing).toBe(true);
+    run(s, GLOW_TIME);
+    expect(s.glowing).toBe(false);
+    addRock(s, 0, s.distance + 6);
+    expect(types(run(s, 1))).toContain('capsize');
+  });
+
+  it('無敵中にもう一つ拾うと、残り時間がはじめからに戻る', () => {
+    const s = emptySim();
+    s.course.nenjus = [nenjuAt(0, 4, 1)];
+    run(s, 0.6);
+    run(s, 5);
+    expect(s.glowT).toBeLessThan(GLOW_TIME - 4);
+    s.course.nenjus.push(nenjuAt(0, s.distance + 4, 2));
+    run(s, 0.6);
+    expect(s.glowT).toBeGreaterThan(GLOW_TIME - 0.6);
+  });
+});
+
+/** 自動操縦で、終わるまで遊ぶ */
+function playThrough(seed: number) {
+  const s = new Sim(seed);
+  let capsizes = 0;
+  let nenju = 0;
+  while (s.phase !== 'over' && s.phase !== 'cleared' && s.time < 900) {
+    for (const e of s.update(DT, autopilotTarget(s))) {
+      if (e.type === 'capsize') capsizes++;
+      if (e.type === 'nenju') nenju++;
+    }
+  }
+  return { s, capsizes, nenju };
+}
+
 describe('通しで遊ぶ（自動操縦）', () => {
-  it('道をたどる操縦なら、30里を超えて長く遊べる（どこかに必ず道がある）', () => {
-    for (const seed of [1, 2, 3]) {
-      const s = new Sim(seed);
-      let capsizes = 0;
-      while (s.phase !== 'over' && s.distance < 6000) {
-        // 少し先の列の通り道を目標にする。流木は着く頃の位置を見て反対側へ
-        const next = s.course.rows.find((r) => r.z + 1.5 > s.distance);
-        let target = next ? next.gapX : 0;
-        if (next?.type === 'log') {
-          const l = next.obstacles[0] as Log;
-          const eta = (next.z - s.distance) / s.speed;
-          const lx = logX(l, s.time + eta);
-          if (Math.abs(lx - target) < l.half + 1.2) target = lx > 0 ? lx - l.half - 1.6 : lx + l.half + 1.6;
-          target = Math.max(-4.8, Math.min(4.8, target));
-        }
-        capsizes += s.update(DT, target).filter((e) => e.type === 'capsize').length;
-      }
-      expect(s.distance, `seed=${seed} capsizes=${capsizes}`).toBeGreaterThan(3000);
+  const seeds = [1, 2, 3, 4, 5, 6, 7, 8];
+  const runs = seeds.map((seed) => ({ seed, ...playThrough(seed) }));
+
+  it('障害物を避けながら和紙を拾い続ければ、120枚集めてクリアできる', () => {
+    for (const r of runs) {
+      expect(r.s.phase, `seed=${r.seed} 和紙=${r.s.washi} 転覆=${r.capsizes}`).toBe('cleared');
+      expect(r.s.washi).toBe(WASHI_GOAL);
+    }
+  });
+
+  it('クリアまでの長さ：上手な操縦で約3分（2分30秒〜4分の範囲）', () => {
+    const times = runs.map((r) => r.s.clearTime);
+    const avg = times.reduce((a, b) => a + b, 0) / times.length;
+    console.info(`クリアまでの時間（自動操縦）: ${times.map((t) => t.toFixed(0)).join(', ')} 秒／平均 ${avg.toFixed(0)} 秒`);
+    expect(avg).toBeGreaterThan(150);
+    expect(avg).toBeLessThan(240);
+  });
+
+  it('念珠は1プレイに3〜4回ほど出てくる', () => {
+    for (const r of runs) {
+      expect(r.nenju, `seed=${r.seed}`).toBeGreaterThanOrEqual(2);
+      expect(r.nenju, `seed=${r.seed}`).toBeLessThanOrEqual(5);
     }
   });
 });

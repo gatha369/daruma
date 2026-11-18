@@ -102,16 +102,11 @@ describe('出てくる順番と種類', () => {
   });
 });
 
-describe('念珠の珠', () => {
+describe('和紙と念珠の置き方', () => {
   it('岩や渦の中心には置かない', () => {
     for (const seed of [1, 2, 3]) {
-      const c = new Course(makeRng(seed));
-      const rows: Row[] = [];
-      for (let d = 0; d < 3000; d += 50) {
-        c.ensure(d + 150, { time: d / 12, distance: d });
-        for (const r of c.rows) if (!rows.includes(r)) rows.push(r);
-      }
-      for (const b of c.beads) {
+      const { course, rows } = buildCourseAll(seed, 3000);
+      for (const b of [...course.washi, ...course.nenjus]) {
         expect(Math.abs(b.x)).toBeLessThanOrEqual(RIVER_HALF_WIDTH);
         for (const r of rows) for (const o of r.obstacles) {
           if (o.kind === 'rock') expect(Math.hypot(o.x - b.x, o.z - b.z)).toBeGreaterThan(o.r + 0.3);
@@ -121,9 +116,47 @@ describe('念珠の珠', () => {
     }
   });
 
-  it('十分な数が出てくる（数里で一連＝108個に届く程度）', () => {
-    const { course } = buildCourse(5, 1000);
-    const n = course.beads.filter((b) => b.z < 1000).length;
-    expect(n).toBeGreaterThan(108 / 6); // 10里で少なくとも1連のペース
+  it('和紙は1枚ずつ：近すぎる所に何枚も並ばない（弧の並びはやめた）', () => {
+    const { course } = buildCourseAll(5, 3000);
+    const ws = [...course.washi].sort((a, b) => a.z - b.z);
+    let tight = 0;
+    for (let i = 1; i < ws.length; i++) if (Math.hypot(ws[i].x - ws[i - 1].x, ws[i].z - ws[i - 1].z) < 1.5) tight++;
+    expect(tight / ws.length).toBeLessThan(0.08);
+  });
+
+  it('和紙は120枚集められるだけ出るが、これまでの珠よりずっと少ない', () => {
+    const { course } = buildCourseAll(5, 2500);
+    const n = course.washi.filter((b) => b.z < 2500).length;
+    expect(n).toBeGreaterThan(150); // 取りこぼしを見込んでも120枚に届く
+    expect(n).toBeLessThan(300); // これまでの珠は同じ距離で約1000個
+  });
+
+  it('念珠は和紙より明らかに珍しい', () => {
+    const { course } = buildCourseAll(5, 2500);
+    const n = course.nenjus.filter((b) => b.z < 2500).length;
+    expect(n).toBeGreaterThanOrEqual(3);
+    expect(n).toBeLessThanOrEqual(5);
   });
 });
+
+describe('障害物の頻度（4.4）', () => {
+  it('列の間隔を詰めて、これまで（間隔14）の約1.3倍の頻度にしてある', () => {
+    expect(14 / ROW_SPACING).toBeGreaterThan(1.25);
+    expect(14 / ROW_SPACING).toBeLessThan(1.35);
+  });
+});
+
+/** 和紙・念珠も含めて、遠くまでコースを作る（後ろに流れたものも残す） */
+function buildCourseAll(seed: number, upTo: number) {
+  const c = new Course(makeRng(seed));
+  const rows: Row[] = [];
+  const washi = new Map<number, { id: number; x: number; z: number }>();
+  const nenjus = new Map<number, { id: number; x: number; z: number }>();
+  for (let d = 0; d < upTo; d += 50) {
+    c.ensure(d + 150, { time: d / 12, distance: d });
+    for (const r of c.rows) if (!rows.includes(r)) rows.push(r);
+    for (const w of c.washi) washi.set(w.id, w);
+    for (const n of c.nenjus) nenjus.set(n.id, n);
+  }
+  return { course: { washi: [...washi.values()], nenjus: [...nenjus.values()] }, rows };
+}

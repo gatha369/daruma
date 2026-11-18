@@ -1,15 +1,13 @@
-// 葦の葉（波でしなる）と達磨（傾き・転覆・起き上がり）、足元で編まれていく念珠
+// 葦の葉（波でしなる）と達磨（傾き・転覆・起き上がり）、念珠の無敵中の七色の光
 import * as THREE from 'three';
-import { ROSARY_SIZE } from '../game/sim';
-import { feetBead, liftBead, wornBead } from '../game/rosary';
-import { toon, outlineMaterial } from './textures';
+import { rainbowHue } from '../game/rosary';
+import { toon, outlineMaterial, discTexture } from './textures';
 
 const LEAF_LEN = 1.3; // 葉の半分の長さ
 const LEAF_W = 0.36; // 葉の半分の幅
 const ROWS = 16;
 const COLS = 4;
-const BEAD_COLOR = 0x7b4a24; // 木の珠（仮）
-const ROSARY_TIME = 1.4; // 念珠を手に掛ける演出の長さ
+const BODY_COLOR = 0xc0392b; // 朱の衣
 
 /** 葉の形の幅（先がとがった細長い形） */
 function leafHalfWidth(z: number) {
@@ -23,13 +21,10 @@ export class Raft {
   private leafGeo: THREE.BufferGeometry;
   private leafBase: Float32Array;
   private outlines: THREE.Object3D[] = [];
-  private feet: THREE.InstancedMesh; // 足元の珠
-  private lifting: THREE.InstancedMesh; // 完成の演出中に持ち上がる珠
-  private worn: THREE.InstancedMesh; // 手に掛けた念珠
-  private oyadama: THREE.Group; // 親珠と房
-  private feetCount = -1;
-  private rosaryT = -1; // 演出の進み（-1：演出なし）
-  private hasWorn = false;
+  private bodyMat: THREE.MeshToonMaterial;
+  private halo: THREE.Sprite; // 無敵中に達磨のまわりにまとう光
+  private haloMat: THREE.SpriteMaterial;
+  private glow = 0;
   private lean = 0;
   private prevVx = 0;
 
@@ -68,7 +63,8 @@ export class Raft {
 
     // ---- 達磨：丸い体に朱の衣、輪郭に墨の線 ----
     const bodyGeo = new THREE.SphereGeometry(0.42, 28, 18);
-    const body = new THREE.Mesh(bodyGeo, toon(0xc0392b));
+    this.bodyMat = toon(BODY_COLOR);
+    const body = new THREE.Mesh(bodyGeo, this.bodyMat);
     body.scale.set(1, 1.1, 1);
     body.position.y = 0.45;
     this.daruma.add(body);
@@ -84,64 +80,44 @@ export class Raft {
     this.daruma.add(face);
     this.group.add(this.daruma);
 
-    // ---- 念珠 ----
-    const beadGeo = new THREE.SphereGeometry(0.045, 8, 6);
-    const beadMat = toon(BEAD_COLOR, { emissive: 0x24120a });
-    this.feet = new THREE.InstancedMesh(beadGeo, beadMat, ROSARY_SIZE);
-    this.feet.count = 0;
-    this.group.add(this.feet);
-    this.lifting = new THREE.InstancedMesh(beadGeo, beadMat, ROSARY_SIZE);
-    this.lifting.visible = false;
-    this.daruma.add(this.lifting);
-    this.worn = new THREE.InstancedMesh(beadGeo, beadMat, ROSARY_SIZE);
-    this.worn.visible = false;
-    this.daruma.add(this.worn);
-    const m = new THREE.Matrix4();
-    for (let i = 0; i < ROSARY_SIZE; i++) {
-      const p = feetBead(i);
-      this.feet.setMatrixAt(i, m.makeTranslation(p.x, p.y, p.z));
-      const w = wornBead(i);
-      this.worn.setMatrixAt(i, m.makeTranslation(w.x, w.y, w.z));
-    }
-    // 親珠（大きめの珠）と房
-    this.oyadama = new THREE.Group();
-    const oya = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 10), beadMat);
-    this.oyadama.add(oya);
-    const tassel = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.28, 10), toon(0x8e2a22));
-    tassel.position.y = -0.2;
-    this.oyadama.add(tassel);
-    this.oyadama.visible = false;
-    this.daruma.add(this.oyadama);
+    // ---- 無敵中の光（ふだんは見えない） ----
+    this.haloMat = new THREE.SpriteMaterial({
+      map: discTexture(0.9), transparent: true, depthWrite: false, opacity: 0,
+    });
+    this.halo = new THREE.Sprite(this.haloMat);
+    this.halo.scale.setScalar(1.9);
+    this.halo.position.y = 0.5;
+    this.halo.visible = false;
+    this.daruma.add(this.halo);
   }
 
   setOutlines(on: boolean) { this.outlines.forEach((o) => (o.visible = on)); }
 
-  /** 足元の珠の数（拾った数だけ並ぶ） */
-  setBeads(n: number) {
-    if (n === this.feetCount) return;
-    this.feetCount = n;
-    this.feet.count = Math.min(ROSARY_SIZE, n);
+  /**
+   * 念珠の無敵中：達磨が七色に光る（色が順にめぐる）。level は光の強さ 0〜1（切れる前は点滅）
+   */
+  setGlow(level: number, t: number) {
+    this.glow = level;
+    if (level <= 0) {
+      this.bodyMat.color.setHex(BODY_COLOR);
+      this.bodyMat.emissive.setHex(0x000000);
+      this.halo.visible = false;
+      return;
+    }
+    const h = rainbowHue(t);
+    this.bodyMat.color.setHSL(h, 0.85, 0.55);
+    this.bodyMat.emissive.setHSL(h, 0.9, 0.3 * level);
+    this.halo.visible = true;
+    this.haloMat.color.setHSL((h + 0.5) % 1, 1, 0.5);
+    this.haloMat.opacity = 0.85 * level;
+    this.halo.scale.setScalar(1.8 + Math.sin(t * 9) * 0.12);
   }
 
-  /** 108個そろった瞬間：親珠と房が付き、達磨が念珠を手に掛ける */
-  startRosary() {
-    this.rosaryT = 0;
-    this.lifting.visible = true;
-    this.lifting.count = ROSARY_SIZE;
-    this.worn.visible = false;
-    this.oyadama.visible = true;
-  }
-
-  get rosaryPlaying() { return this.rosaryT >= 0; }
+  get glowing() { return this.glow > 0; }
 
   reset() {
-    this.rosaryT = -1;
-    this.hasWorn = false;
-    this.worn.visible = false;
-    this.lifting.visible = false;
-    this.oyadama.visible = false;
-    this.feetCount = -1;
     this.lean = 0;
+    this.setGlow(0, 0);
   }
 
   /**
@@ -168,29 +144,7 @@ export class Raft {
     this.prevVx = vx;
     const target = THREE.MathUtils.clamp(-ax * 0.012, -0.35, 0.35) + THREE.MathUtils.clamp(vx * 0.03, -0.15, 0.15);
     this.lean += (target - this.lean) * Math.min(1, dt * 8);
-
-    // 念珠を手に掛ける演出
-    if (this.rosaryT >= 0) {
-      this.rosaryT += dt / ROSARY_TIME;
-      const k = Math.min(1, this.rosaryT);
-      const m = new THREE.Matrix4();
-      for (let i = 0; i < ROSARY_SIZE; i++) {
-        const b = liftBead(i, k);
-        this.lifting.setMatrixAt(i, m.makeTranslation(b.x, b.y, b.z));
-      }
-      this.lifting.instanceMatrix.needsUpdate = true;
-      const front = liftBead(0, k); // 親珠は編み始め（カメラ側）の位置に付く
-      this.oyadama.position.set(front.x, front.y - 0.02, front.z + 0.05);
-      this.oyadama.scale.setScalar(Math.min(1, k * 2));
-      if (k >= 1) {
-        this.rosaryT = -1;
-        this.lifting.visible = false;
-        this.worn.visible = true;
-        this.hasWorn = true;
-      }
-    }
   }
 
   get darumaLean() { return this.lean; }
-  get wearing() { return this.hasWorn; }
 }

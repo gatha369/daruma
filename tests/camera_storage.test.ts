@@ -44,20 +44,33 @@ const brokenKV: KV = {
 };
 
 describe('ベスト記録の保存', () => {
-  it('はじめは0。より良い記録だけが更新され、新記録が分かる', () => {
+  it('はじめは0。途中で終わったときは枚数だけが記録される', () => {
     const kv = memoryKV();
-    expect(loadBest(kv)).toEqual({ distance: 0, beads: 0, rosaries: 0 });
-    const r1 = recordRun({ distance: 500, beads: 30, rosaries: 0 }, kv);
-    expect(r1.isNew).toEqual({ distance: true, beads: true, rosaries: false });
-    const r2 = recordRun({ distance: 300, beads: 120, rosaries: 1 }, kv);
-    expect(r2.isNew).toEqual({ distance: false, beads: true, rosaries: true });
-    expect(loadBest(kv)).toEqual({ distance: 500, beads: 120, rosaries: 1 });
+    expect(loadBest(kv)).toEqual({ washi: 0, clearTime: 0, lives: 0 });
+    const r1 = recordRun({ cleared: false, washi: 40 }, kv);
+    expect(r1.isNew).toEqual({ washi: true, clearTime: false, lives: false });
+    const r2 = recordRun({ cleared: false, washi: 30 }, kv);
+    expect(r2.isNew.washi).toBe(false);
+    expect(loadBest(kv)).toEqual({ washi: 40, clearTime: 0, lives: 0 });
+  });
+
+  it('クリアしたとき：時間は短いほど、残り回数は多いほど新記録', () => {
+    const kv = memoryKV();
+    const r1 = recordRun({ cleared: true, washi: 120, clearTime: 200, lives: 1 }, kv);
+    expect(r1.isNew).toEqual({ washi: true, clearTime: true, lives: true });
+    const r2 = recordRun({ cleared: true, washi: 120, clearTime: 230, lives: 3 }, kv);
+    expect(r2.isNew).toEqual({ washi: false, clearTime: false, lives: true });
+    const r3 = recordRun({ cleared: true, washi: 120, clearTime: 180, lives: 0 }, kv);
+    expect(r3.isNew).toEqual({ washi: false, clearTime: true, lives: false });
+    expect(loadBest(kv)).toEqual({ washi: 120, clearTime: 180, lives: 3 });
+    recordRun({ cleared: false, washi: 50 }, kv); // 途中で終わってもクリアの記録は消えない
+    expect(loadBest(kv)).toEqual({ washi: 120, clearTime: 180, lives: 3 });
   });
 
   it('保存できない環境でもエラーにならない', () => {
-    expect(loadBest(brokenKV)).toEqual({ distance: 0, beads: 0, rosaries: 0 });
-    expect(() => recordRun({ distance: 1, beads: 1, rosaries: 0 }, brokenKV)).not.toThrow();
-    expect(loadBest(null).distance).toBe(0);
+    expect(loadBest(brokenKV)).toEqual({ washi: 0, clearTime: 0, lives: 0 });
+    expect(() => recordRun({ cleared: false, washi: 1 }, brokenKV)).not.toThrow();
+    expect(loadBest(null).washi).toBe(0);
     expect(loadSound(brokenKV)).toBe(false);
   });
 

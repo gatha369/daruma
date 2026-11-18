@@ -26,10 +26,11 @@
     <!-- プレイ中の表示 -->
     <div id="hud" hidden>
       <div id="lives" aria-label="残り回数"></div>
-      <div id="score">
-        <span class="dist"><b id="distance">0.0</b><small>里</small></span>
-        <span class="beads">珠 <b id="bead-count">0</b>／108</span>
-        <span class="rosaries" id="rosary-wrap" hidden>念珠 <b id="rosary-count">0</b>連</span>
+      <div id="center">
+        <div id="score"><span class="label">和紙</span> <b id="washi-count">0</b><span class="goal">／120</span></div>
+        <div id="glow" hidden aria-label="念珠の無敵の残り時間">
+          <span class="label">念珠</span><span class="bar"><i id="glow-bar"></i></span><b id="glow-sec">8</b>
+        </div>
       </div>
       <button id="pause-btn" class="icon-btn" aria-label="一時停止">
         <svg viewBox="0 0 24 24" width="22" height="22"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
@@ -40,13 +41,13 @@
     <!-- タイトル画面 -->
     <section id="title" class="screen">
       <div class="title-box">
-        <h1>一葦渡江</h1>
-        <p class="yomi">いちいとこう</p>
+        <h1 id="game-title"></h1>
+        <p class="yomi" id="subtitle"></p>
         <button id="start-btn" class="main-btn">はじめる</button>
-        <p class="hint">左右に動かして、岩や渦をよけながら長江を渡る</p>
+        <p class="hint" id="how-to"></p>
       </div>
       <button id="sound-btn" class="small-btn" aria-pressed="false">音：オフ</button>
-      <a id="shop-link" class="shop" target="_blank" rel="noopener">長岡念珠店</a>
+      <a class="shop shop-link" target="_blank" rel="noopener">制作：長岡念珠店</a>
     </section>
 
     <!-- 一時停止 -->
@@ -58,23 +59,61 @@
       </div>
     </section>
 
-    <!-- 結果画面 -->
+    <!-- クリア：大だるま絵が描き上がる（ステップ5では仮の絵）→ クリア画面 -->
+    <section id="clear" class="screen" hidden>
+      <div id="clear-stage">
+        <!-- 仮の大だるま絵（案A：ゲームの中で描くオリジナル）。眉間 → 鼻 → 目 → 顔の輪郭 → 衣 の順に描く -->
+        <svg id="daruma-art" viewBox="0 0 220 360" aria-label="大だるま絵">
+          <rect class="sheet" x="4" y="4" width="212" height="352"/>
+          <g class="s1"><path pathLength="1" d="M110 116 L110 131"/><path pathLength="1" d="M104 119 L106 130"/></g>
+          <g class="s2"><path pathLength="1" d="M110 136 Q99 160 104 170 Q111 176 120 168"/></g>
+          <g class="s3">
+            <path pathLength="1" d="M76 122 Q88 108 103 120"/><path pathLength="1" d="M117 120 Q132 108 144 122"/>
+            <circle pathLength="1" cx="91" cy="138" r="10"/><circle pathLength="1" cx="129" cy="138" r="10"/>
+            <circle class="pupil" cx="93" cy="139" r="4"/><circle class="pupil" cx="127" cy="139" r="4"/>
+          </g>
+          <g class="s4">
+            <path pathLength="1" d="M74 112 Q66 168 88 196 Q110 214 132 196 Q154 168 146 112"/>
+            <path pathLength="1" d="M84 186 Q110 226 136 186"/><path pathLength="1" d="M96 182 Q110 190 124 182"/>
+          </g>
+          <g class="s5">
+            <path pathLength="1" d="M62 132 Q50 58 110 46 Q170 58 158 132"/>
+            <path pathLength="1" d="M62 132 Q38 230 26 344"/><path pathLength="1" d="M158 132 Q182 230 194 344"/>
+            <path pathLength="1" d="M70 226 Q110 262 150 226"/><path pathLength="1" d="M60 290 Q110 318 160 290"/>
+          </g>
+        </svg>
+        <p id="clear-title">大だるま絵 完成</p>
+        <p id="skip-hint">画面をタップすると飛ばせます</p>
+      </div>
+      <div class="panel result" id="clear-panel" hidden>
+        <h2>大だるま絵 完成</h2>
+        <table>
+          <tr><th>クリアまでの時間</th><td><b id="c-time">0分00秒</b> <span id="c-time-new" class="new" hidden>新記録</span></td><td class="best">ベスト <span id="cb-time">-</span></td></tr>
+          <tr><th>残り回数</th><td><b id="c-lives">0</b> 回 <span id="c-lives-new" class="new" hidden>新記録</span></td><td class="best">ベスト <span id="cb-lives">0</span> 回</td></tr>
+        </table>
+        <p class="story story-text"></p>
+        <div class="buttons">
+          <button id="c-retry-btn" class="main-btn">もう一度</button>
+          <a id="c-share-btn" class="link-btn" target="_blank" rel="noopener">Xで共有</a>
+        </div>
+        <button id="c-title-btn" class="sub-btn">タイトルへ</button>
+        <a class="credit shop-link" target="_blank" rel="noopener">制作：長岡念珠店</a>
+      </div>
+    </section>
+
+    <!-- 結果画面（途中で終わったとき） -->
     <section id="result" class="screen dim" hidden>
       <div class="panel result">
-        <h2>渡った距離</h2>
-        <p class="big"><b id="r-distance">0.0</b> 里 <span id="r-distance-new" class="new" hidden>新記録</span></p>
-        <p class="best">ベスト <span id="b-distance">0.0</span> 里</p>
-        <table>
-          <tr><th>拾った珠</th><td><b id="r-beads">0</b> 個 <span id="r-beads-new" class="new" hidden>新記録</span></td><td class="best">ベスト <span id="b-beads">0</span> 個</td></tr>
-          <tr><th>念珠</th><td><b id="r-rosaries">0</b> 連 <span id="r-rosaries-new" class="new" hidden>新記録</span></td><td class="best">ベスト <span id="b-rosaries">0</span> 連</td></tr>
-        </table>
-        <p class="story" id="story"></p>
+        <p class="big"><b id="r-washi">0</b> 畳まで集まりました <span id="r-washi-new" class="new" hidden>新記録</span></p>
+        <p class="best">ベスト <span id="b-washi">0</span> 畳</p>
+        <p class="cheer" id="r-cheer"></p>
+        <p class="story story-text"></p>
         <div class="buttons">
           <button id="retry-btn" class="main-btn">もう一度</button>
           <a id="share-btn" class="link-btn" target="_blank" rel="noopener">Xで共有</a>
-          <a id="shop-btn" class="link-btn" target="_blank" rel="noopener">長岡念珠店のサイトへ</a>
         </div>
         <button id="title-btn" class="sub-btn">タイトルへ</button>
+        <a class="credit shop-link" target="_blank" rel="noopener">制作：長岡念珠店</a>
       </div>
     </section>
 
