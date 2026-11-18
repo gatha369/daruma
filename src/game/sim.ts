@@ -15,8 +15,9 @@ export const WAVE_TIME = 2.5; // 大波を受けて操作が効きにくい時�
 export const WAVE_CONTROL = 0.3; // そのあいだの操作の効き具合
 export const CURRENT_FORCE = 8; // 横向きの流れが葉を押す強さ
 export const WHIRL_FORCE = 30; // 渦が引き寄せる強さ（中心に近いほど強い）
-export const WASHI_RADIUS = 0.35; // 和紙の拾える大きさ
-export const NENJU_RADIUS = 0.45; // 念珠の拾える大きさ
+export const WASHI_SIZE = 0.95; // 和紙の一辺の長さ（見た目）
+export const WASHI_RADIUS = 0.42; // 和紙の拾える大きさ
+export const NENJU_RADIUS = 0.6; // 念珠の拾える大きさ
 export const LOOK_AHEAD = 150; // どこまで先のコースを作っておくか
 
 export type Cause = 'rock' | 'log' | 'whirl';

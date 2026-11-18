@@ -6,6 +6,8 @@ import { recordRun, loadBest, loadSound, saveSound } from './game/storage';
 import { World } from './render/world';
 import { QualityController, SETTINGS, initialLevel, Level } from './game/quality';
 import { paperDataURL } from './render/textures';
+import { sceneAt, SCENE_LABEL } from './game/scenery';
+import { ClearScene } from './clearScene';
 import {
   SHOP_URL, STORY_TEXT, GAME_TITLE, SUBTITLE, HOW_TO, shareUrl, shareTextClear, shareTextPartial,
 } from './config';
@@ -16,7 +18,7 @@ const ui = {
   hud: $('hud'), lives: $('lives'), washiCount: $('washi-count'), score: $('score'),
   glow: $('glow'), glowBar: $('glow-bar'), glowSec: $('glow-sec'), toast: $('toast'),
   title: $('title'), pause: $('pause'), result: $('result'), clear: $('clear'), rotate: $('rotate'),
-  clearStage: $('clear-stage'), clearPanel: $('clear-panel'),
+  clearPanel: $('clear-panel'),
   sound: $('sound-btn'),
 };
 
@@ -41,7 +43,8 @@ document.querySelectorAll('.story-text').forEach((el) => (el.textContent = STORY
 document.querySelectorAll<HTMLAnchorElement>('.shop-link').forEach((a) => (a.href = SHOP_URL));
 
 // ---- 残り回数（小さな達磨のアイコン） ----
-const DARUMA_ICON = '<svg viewBox="0 0 22 24"><ellipse cx="11" cy="14" rx="9" ry="9.5" fill="#c0392b"/><circle cx="11" cy="11" r="4.6" fill="#f2e6d0"/><circle cx="9.3" cy="10.6" r="0.9" fill="#222"/><circle cx="12.7" cy="10.6" r="0.9" fill="#222"/></svg>';
+// 頭巾をかぶった達磨（太い眉・大きな目・ひげ）
+const DARUMA_ICON = '<svg viewBox="0 0 22 24"><path d="M11 1C5.5 1 3.5 5.5 3.5 10.5C3.5 15 1 18.5 1 23H21C21 18.5 18.5 15 18.5 10.5C18.5 5.5 16.5 1 11 1Z" fill="#c0392b" stroke="#222" stroke-width="0.8"/><ellipse cx="11" cy="11.5" rx="5" ry="5.4" fill="#f1e2c8" stroke="#222" stroke-width="0.6"/><path d="M6.8 8.6L9.8 9.4M15.2 8.6L12.2 9.4" stroke="#222" stroke-width="1.1" stroke-linecap="round"/><circle cx="8.9" cy="11" r="1.3" fill="#fff" stroke="#222" stroke-width="0.5"/><circle cx="13.1" cy="11" r="1.3" fill="#fff" stroke="#222" stroke-width="0.5"/><circle cx="9.2" cy="11" r="0.6" fill="#222"/><circle cx="12.8" cy="11" r="0.6" fill="#222"/><path d="M7.2 13.8Q11 12.6 14.8 13.8Q13.6 17.6 11 17.4Q8.4 17.6 7.2 13.8Z" fill="#222"/></svg>';
 ui.lives.innerHTML = DARUMA_ICON.repeat(MAX_LIVES);
 const lifeIcons = Array.from(ui.lives.querySelectorAll('svg'));
 
@@ -55,7 +58,7 @@ function show(next: Screen) {
 }
 
 function startGame() {
-  clearTimeout(artTimer);
+  clearScene.stop();
   sim = new Sim();
   world.reset();
   input.reset();
@@ -65,7 +68,7 @@ function startGame() {
 }
 
 function toTitle() {
-  clearTimeout(artTimer);
+  clearScene.stop();
   world.reset();
   show('title');
 }
@@ -93,9 +96,12 @@ function showResult() {
   show('result');
 }
 
-// ---- クリア：大だるま絵が描き上がる（ステップ5では仮の絵）→ クリア画面（3.3、第5章） ----
-const ART_TIME = 6500; // 描き上がるまでの時間（ミリ秒）
-let artTimer = 0;
+// ---- クリア：境内で北斎が大だるま絵を描き、櫓に引き上げる → クリア画面（3.3、第5章） ----
+const clearScene = new ClearScene(ui.clear, () => {
+  ui.clear.classList.add('done');
+  ui.clearPanel.hidden = false;
+  resultShownAt = performance.now();
+});
 function showClear() {
   const { best, isNew } = recordRun({ cleared: true, washi: sim.washi, clearTime: sim.clearTime, lives: sim.lives });
   $('c-time').textContent = formatTime(sim.clearTime);
@@ -105,19 +111,13 @@ function showClear() {
   $('c-time-new').hidden = !isNew.clearTime;
   $('c-lives-new').hidden = !isNew.lives;
   $<HTMLAnchorElement>('c-share-btn').href = shareUrl(shareTextClear(sim.clearTime));
-  // 絵を描きはじめからやり直す
-  ui.clearStage.classList.remove('drawing', 'done');
-  void ui.clearStage.offsetWidth;
-  ui.clearStage.classList.add('drawing');
+  ui.clear.classList.remove('done');
   ui.clearPanel.hidden = true;
   show('clear');
-  artTimer = window.setTimeout(finishArt, ART_TIME);
+  clearScene.start(); // 表示してから始める（線の長さを測るため）
 }
 function finishArt() {
-  clearTimeout(artTimer);
-  ui.clearStage.classList.add('done');
-  ui.clearPanel.hidden = false;
-  resultShownAt = performance.now();
+  clearScene.skip();
 }
 /** 演出は画面をタップすると飛ばせる */
 ui.clear.addEventListener('pointerdown', () => {
@@ -271,4 +271,8 @@ requestAnimationFrame(loop);
   get quality() { return quality.level; },
   get glowing() { return world.glowing; },
   get artDone() { return !ui.clearPanel.hidden; },
+  get scene() { return SCENE_LABEL[sceneAt(sim.progress)]; },
+  get bankThings() { return world.riverside.things(); },
+  /** 確認用：和紙の枚数を変えて、その場面の景色に作り直す */
+  jumpTo(washi: number) { sim.washi = washi; world.riverside.reset(-sim.distance, sim.progress); },
 };

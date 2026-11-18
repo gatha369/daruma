@@ -5,9 +5,9 @@
 export interface P3 { x: number; y: number; z: number }
 
 export const NENJU_BEADS = 9; // 輪の玉の数（親玉は別）
-export const NENJU_RING = 0.4; // 輪の半径
-export const NENJU_BEAD_R = 0.1; // 玉の大きさ（遠くからでも一つ一つ見える大きさ）
-export const OYADAMA_R = 0.14; // 親玉の大きさ
+export const NENJU_RING = 0.5; // 輪の半径
+export const NENJU_BEAD_R = 0.13; // 玉の大きさ（遠くからでも一つ一つ見える大きさ）
+export const OYADAMA_R = 0.18; // 親玉の大きさ
 
 /** 輪の上の位置（slot 0 が親玉、1〜NENJU_BEADS が玉）。水面と平行な輪で、親玉は手前＝カメラ側 */
 function slot(k: number): P3 {

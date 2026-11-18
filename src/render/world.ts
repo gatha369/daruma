@@ -1,7 +1,9 @@
 // 3Dの表示。ゲームの状態（Sim）を受け取って、水墨画風に描く
 import * as THREE from 'three';
 import { BANK_X, RIVER_HALF_WIDTH, clamp } from '../game/logic';
-import { Sim, CAPSIZE_TIME, WAVE_TIME, GLOW_WARN } from '../game/sim';
+import { Riverside } from './riverside';
+import { washiTexture } from './inkTextures';
+import { Sim, CAPSIZE_TIME, WAVE_TIME, GLOW_WARN, WASHI_SIZE } from '../game/sim';
 import { Washi, Nenju, Log, Rock, Wave, Whirl, logX, waveZ } from '../game/course';
 import { NENJU_BEADS, NENJU_BEAD_R, OYADAMA_R, nenjuBead, oyadamaPos, glowLevel } from '../game/rosary';
 import { placeCamera, fitFov } from '../game/camera';
@@ -27,8 +29,8 @@ export class World {
   private backdrop = new Backdrop();
   private wake = new Wake();
   private raft = new Raft();
-  private banks: THREE.Mesh[];
-  private bankMat = toon(0x4a4845);
+  riverside = new Riverside();
+  private progress = 0;
   private meshes = new Map<object, THREE.Object3D>();
   private seen = new Set<object>();
   private streaks: { mesh: THREE.Mesh; seed: number }[] = [];
@@ -38,10 +40,11 @@ export class World {
     rock: new THREE.DodecahedronGeometry(1, 0),
     log: new THREE.CylinderGeometry(1, 0.85, 1, 10),
     washi: washiGeometry(),
-    washiEdge: new THREE.PlaneGeometry(0.78, 0.78),
+    shadow: new THREE.PlaneGeometry(1, 1),
     nenjuBead: new THREE.SphereGeometry(NENJU_BEAD_R, 12, 8),
     oyadama: new THREE.SphereGeometry(OYADAMA_R, 14, 10),
-    tassel: new THREE.ConeGeometry(0.08, 0.34, 10),
+    tassel: new THREE.ConeGeometry(0.13, 0.46, 12),
+    knot: new THREE.SphereGeometry(0.06, 8, 6),
     glow: new THREE.PlaneGeometry(1, 1),
     whirl: new THREE.PlaneGeometry(1, 1),
     wave: new THREE.CylinderGeometry(0.5, 0.5, (BANK_X + 0.6) * 2, 16),
@@ -51,11 +54,12 @@ export class World {
   private mat = {
     rock: toon(0x34322f),
     log: toon(0x4a4038),
-    washi: toon(0xfbf8f0, { side: THREE.DoubleSide }),
-    washiEdge: new THREE.MeshBasicMaterial({ color: 0x3a3835, transparent: true, opacity: 0.55, depthWrite: false }),
+    washi: new THREE.MeshBasicMaterial({ map: washiTexture(), side: THREE.DoubleSide }),
+    shadow: new THREE.MeshBasicMaterial({ map: discTexture(0.7), color: 0x1d1b19, transparent: true, opacity: 0.4, depthWrite: false }),
     nenju: toon(0x6b3d1e, { emissive: 0x3a1c08 }),
-    tassel: toon(0x8e2a22, { emissive: 0x2a0806 }),
+    tassel: toon(0xb8382c, { emissive: 0x3a0c08 }),
     nenjuGlow: new THREE.MeshBasicMaterial({ map: discTexture(0.8), color: 0xffd27a, transparent: true, opacity: 0.6, depthWrite: false }),
+    nenjuHalo: new THREE.SpriteMaterial({ map: discTexture(0.85), color: 0xffe2a0, transparent: true, opacity: 0.7, depthWrite: false }),
     whirl: new THREE.MeshBasicMaterial({ map: whirlTexture(), transparent: true, depthWrite: false }),
     wave: toon(0xf4f2ec),
     streak: new THREE.MeshBasicMaterial({ map: strokeTexture(), transparent: true, depthWrite: false }),
@@ -77,12 +81,7 @@ export class World {
     this.scene.add(this.wake.mesh);
     this.scene.add(this.raft.group);
 
-    this.banks = [-1, 1].map((side) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.25, 320), this.bankMat);
-      m.position.x = side * BANK_X;
-      this.scene.add(m);
-      return m;
-    });
+    this.scene.add(this.riverside.group);
 
     // 横向きの流れを見せる、筆で払ったような筋
     const rng = mulberry(5);
@@ -118,6 +117,7 @@ export class World {
     this.backdrop.mistGroup.visible = q.mist;
     this.outlinesOn = q.outlines;
     this.raft.setOutlines(q.outlines);
+    this.riverside.setOutlines(q.outlines);
     for (const m of this.meshes.values()) {
       m.traverse((o) => { if (o.userData.outline) o.visible = q.outlines; });
     }
@@ -145,6 +145,7 @@ export class World {
   renderTitle(t: number, dt: number) {
     const z = -t * 1.5;
     this.leafZ = z;
+    this.progress = 0;
     this.palette = paletteAt(0);
     this.applyPalette(this.palette, t);
     const raft = this.raft.group;
@@ -167,6 +168,7 @@ export class World {
   render(sim: Sim, t: number, dt: number, sinceRecover: number) {
     const z = -sim.distance;
     this.leafZ = z;
+    this.progress = sim.progress;
     this.palette = paletteAt(sim.progress);
     this.applyPalette(this.palette, t);
     const p = sim.player;
@@ -215,6 +217,7 @@ export class World {
   get glowing() { return this.raft.glowing; }
 
   reset() {
+    this.riverside.reset(this.leafZ, 0);
     this.clearObstacles();
     this.raft.reset();
     this.wake.reset();
@@ -228,13 +231,12 @@ export class World {
     this.hemi.intensity = 2.2 * p.light;
     this.sun.intensity = 1.2 * p.light;
     setRGB(this.mat.whirl.color, p.ink);
-    setRGB(this.bankMat.color, p.dark > 0.5 ? p.mountain : p.ink);
     this.water.update(p, t, this.leafZ);
-    this.backdrop.update(p, t, this.leafZ);
+    this.backdrop.update(p, t, this.leafZ, this.progress);
+    this.riverside.update(this.leafZ, this.progress);
   }
 
   private follow(z: number) {
-    this.banks.forEach((b) => (b.position.z = z - 100));
     placeCamera(this.camera, this.aspect, z, this.fov);
   }
 
@@ -369,18 +371,18 @@ export class World {
     for (const w of sim.course.washi) {
       if (w.taken) continue;
       const m = this.getMesh(w, () => this.makeWashi(w.id));
-      // 水面に浮いて、少し揺れる
-      m.position.set(w.x, 0.06 + Math.sin(t * 2.5 + w.id) * 0.03, -w.z);
-      m.rotation.set(Math.sin(t * 1.8 + w.id) * 0.08, (w.id * 0.7) % Math.PI, Math.sin(t * 2.1 + w.id * 2) * 0.08);
+      // 水面に浮いて、少し揺れる。紙は奥の端が少し持ち上がって、遠くからでも面が見える
+      m.position.set(w.x, 0.08 + Math.sin(t * 2.5 + w.id) * 0.03, -w.z);
+      const paper = m.userData.paper as THREE.Object3D;
+      paper.rotation.set(0.42 + Math.sin(t * 1.8 + w.id) * 0.08, 0, Math.sin(t * 2.1 + w.id * 2) * 0.08);
     }
     for (const n of sim.course.nenjus) {
       if (n.taken) continue;
       const m = this.getMesh(n, () => this.makeNenju());
       m.position.set(n.x, 0.12 + Math.sin(t * 2.4 + n.id) * 0.05, -n.z);
-      m.rotation.y = t * 0.8;
-      const glow = m.userData.glow as THREE.Mesh;
-      glow.rotation.z = -t * 0.8; // 光は回さない（輪と一緒に回る分を打ち消す）
-      glow.scale.setScalar(2.2 + Math.sin(t * 4) * 0.2);
+      m.rotation.z = Math.sin(t * 1.6 + n.id) * 0.12; // ゆらゆら揺れる
+      (m.userData.glow as THREE.Mesh).scale.setScalar(2.6 + Math.sin(t * 4) * 0.25);
+      (m.userData.halo as THREE.Sprite).scale.setScalar(2.4 + Math.sin(t * 4) * 0.2);
     }
     for (const [key, m] of this.meshes) {
       if (!this.seen.has(key)) {
@@ -390,41 +392,60 @@ export class World {
     }
   }
 
-  /** 和紙：白い四角の紙。少し波打っていて、縁に墨の影 */
+  /** 和紙：白い四角の紙に墨の細い縁取り。少し波打ち、水面に影が落ちる */
   private makeWashi(id: number): THREE.Object3D {
     const g = new THREE.Group();
-    const paper = new THREE.Mesh(this.geo.washi, this.mat.washi);
+    const shadow = new THREE.Mesh(this.geo.shadow, this.mat.shadow);
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.set(0.12, -0.06, 0.1);
+    shadow.scale.setScalar(WASHI_SIZE * 1.5);
+    g.add(shadow);
+    const paper = new THREE.Group();
+    const sheet = new THREE.Mesh(this.geo.washi, this.mat.washi);
+    sheet.rotation.y = ((id * 0.37) % 0.6) - 0.3; // 1枚ずつ少し向きが違う
+    paper.add(sheet);
     g.add(paper);
-    const edge = new THREE.Mesh(this.geo.washiEdge, this.mat.washiEdge);
-    edge.rotation.x = -Math.PI / 2;
-    edge.position.y = -0.03;
-    g.add(edge);
-    g.userData.id = id;
+    g.userData.paper = paper;
     return g;
   }
 
-  /** 念珠：玉9個と親玉1つの輪に、親玉から簡単な房（簡略化した形）。まわりに光をまとう */
+  /** 念珠：玉9個と親玉1つの輪に、親玉から簡単な房（簡略化した形）。手前に傾けて立て、まわりに光をまとう */
   private makeNenju(): THREE.Object3D {
     const g = new THREE.Group();
-    const glow = new THREE.Mesh(this.geo.glow, this.mat.nenjuGlow);
+    const glow = new THREE.Mesh(this.geo.glow, this.mat.nenjuGlow); // 水面に映る光
     glow.rotation.x = -Math.PI / 2;
-    glow.position.y = -0.05;
+    glow.position.y = -0.1;
     g.add(glow);
     g.userData.glow = glow;
+    const halo = new THREE.Sprite(this.mat.nenjuHalo); // 輪のうしろの光
+    halo.position.set(0, NENJU_LIFT, -0.25);
+    g.add(halo);
+    g.userData.halo = halo;
+    // 輪：水面から少し浮かせ、面をカメラの方へ向けて立てる。親玉がいちばん下（手前）に来る
+    const tilt = new THREE.Group();
+    tilt.position.y = NENJU_LIFT;
+    tilt.rotation.x = NENJU_TILT;
+    g.add(tilt);
     const ring = new THREE.InstancedMesh(this.geo.nenjuBead, this.mat.nenju, NENJU_BEADS);
     const mtx = new THREE.Matrix4();
     for (let i = 0; i < NENJU_BEADS; i++) {
       const p = nenjuBead(i);
       ring.setMatrixAt(i, mtx.makeTranslation(p.x, p.y, p.z));
     }
-    g.add(ring);
+    tilt.add(ring);
     const o = oyadamaPos();
     const oya = new THREE.Mesh(this.geo.oyadama, this.mat.nenju);
     oya.position.set(o.x, o.y, o.z);
-    g.add(oya);
+    tilt.add(oya);
+    // 房：親玉から真下に垂れる（結び目と、先が広がる房）
+    const oyaY = NENJU_LIFT - o.z * Math.sin(NENJU_TILT);
+    const oyaZ = o.z * Math.cos(NENJU_TILT);
+    const knot = new THREE.Mesh(this.geo.knot, this.mat.tassel);
+    knot.position.set(0, oyaY - OYADAMA_R - 0.03, oyaZ);
+    g.add(knot);
     const tassel = new THREE.Mesh(this.geo.tassel, this.mat.tassel);
-    tassel.position.set(o.x, o.y, o.z + OYADAMA_R + 0.15);
-    tassel.rotation.x = -Math.PI / 2; // 房は水面に寝かせ、親玉の側を細く、輪の外へ広がるように
+    tassel.rotation.x = Math.PI; // 細い方が上（親玉の側）
+    tassel.position.set(0, oyaY - OYADAMA_R - 0.06 - 0.23, oyaZ);
     g.add(tassel);
     g.scale.setScalar(1.15);
     return g;
@@ -452,15 +473,18 @@ export class World {
   }
 }
 
+const NENJU_LIFT = 0.95; // 念珠の輪の中心の高さ
+const NENJU_TILT = 1.05; // 輪の面の傾き（カメラの方へ向ける）
+
 /** 和紙の形：少し波打った四角い紙 */
 function washiGeometry(): THREE.BufferGeometry {
-  const geo = new THREE.PlaneGeometry(0.7, 0.7, 6, 6);
+  const geo = new THREE.PlaneGeometry(WASHI_SIZE, WASHI_SIZE, 6, 6);
   geo.rotateX(-Math.PI / 2);
   const p = geo.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i);
     const z = p.getZ(i);
-    p.setY(i, 0.03 * Math.sin(x * 9 + 1) + 0.025 * Math.sin(z * 7));
+    p.setY(i, 0.035 * Math.sin(x * 7 + 1) + 0.03 * Math.sin(z * 5.5));
   }
   geo.computeVertexNormals();
   return geo;

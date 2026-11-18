@@ -2,12 +2,33 @@
 import * as THREE from 'three';
 import { rainbowHue } from '../game/rosary';
 import { toon, outlineMaterial, discTexture } from './textures';
+import { robeTexture, darumaFaceTexture } from './inkTextures';
 
 const LEAF_LEN = 1.3; // 葉の半分の長さ
 const LEAF_W = 0.36; // 葉の半分の幅
 const ROWS = 16;
 const COLS = 4;
 const BODY_COLOR = 0xc0392b; // 朱の衣
+/**
+ * 達磨の向き。0 なら顔が真後ろ（カメラの方）を向く。進む方向は画面の奥。
+ * プレイ中に顔が見えるよう、振り返ってこちらを見ている向きにしている（少し斜め）
+ */
+export const FACE_YAW = 0.35;
+/** 衣の形（半径, 高さ）。下が裾、上が頭巾のてっぺん */
+const DARUMA_PROFILE: [number, number][] = [
+  [0, 0], [0.4, 0.02], [0.47, 0.14], [0.47, 0.3], [0.42, 0.46], [0.36, 0.58],
+  [0.34, 0.7], [0.32, 0.82], [0.25, 0.95], [0.14, 1.03], [0, 1.06],
+];
+const FACE_Y = 0.72; // 顔の中心の高さ
+/** 衣の表面の、前（+z）側の位置 */
+function faceZ(y: number): number {
+  for (let i = 1; i < DARUMA_PROFILE.length; i++) {
+    const [r1, y1] = DARUMA_PROFILE[i - 1];
+    const [r2, y2] = DARUMA_PROFILE[i];
+    if (y >= y1 && y <= y2) return r1 + ((y - y1) / (y2 - y1)) * (r2 - r1);
+  }
+  return 0.3;
+}
 
 /** 葉の形の幅（先がとがった細長い形） */
 function leafHalfWidth(z: number) {
@@ -61,23 +82,42 @@ export class Raft {
     vein.position.y = 0.03;
     this.group.add(vein);
 
-    // ---- 達磨：丸い体に朱の衣、輪郭に墨の線 ----
-    const bodyGeo = new THREE.SphereGeometry(0.42, 28, 18);
-    this.bodyMat = toon(BODY_COLOR);
+    // ---- 達磨：頭巾をかぶった朱の衣の半身。顔はぎょろりとした目と髭（北斎の大だるまの顔つきに寄せる） ----
+    // 衣の形（下が広く、頭巾で丸く閉じる）を回転させて作る
+    const profile = DARUMA_PROFILE.map(([r, y]) => new THREE.Vector2(r, y));
+    const bodyGeo = new THREE.LatheGeometry(profile, 32);
+    this.bodyMat = toon(BODY_COLOR, { map: robeTexture() });
+    const figure = new THREE.Group();
+    figure.rotation.y = FACE_YAW;
+    this.daruma.add(figure);
     const body = new THREE.Mesh(bodyGeo, this.bodyMat);
-    body.scale.set(1, 1.1, 1);
-    body.position.y = 0.45;
-    this.daruma.add(body);
+    figure.add(body);
     const bodyLine = new THREE.Mesh(bodyGeo, outlineMaterial);
-    bodyLine.scale.set(1.06, 1.16, 1.06);
-    bodyLine.position.y = 0.45;
-    this.daruma.add(bodyLine);
+    bodyLine.scale.set(1.06, 1.03, 1.06);
+    figure.add(bodyLine);
     this.outlines.push(bodyLine);
-    // 顔（進行方向を向いているので、ふだんは背中側が見える）
-    const face = new THREE.Mesh(new THREE.CircleGeometry(0.21, 24), toon(0xf2e6d0));
-    face.position.set(0, 0.56, -0.415);
-    face.rotation.y = Math.PI;
-    this.daruma.add(face);
+    // 顔：頭巾の開いた所に、少しふくらんだ顔をはめる（+z 側が顔）
+    // 円を前へふくらませた形（絵がゆがまないよう、模様は正面から貼る）
+    const faceGeo = new THREE.CircleGeometry(1, 32, 0, Math.PI * 2);
+    const fp = faceGeo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < fp.count; i++) {
+      const r2 = fp.getX(i) ** 2 + fp.getY(i) ** 2;
+      fp.setZ(i, 0.5 * (1 - r2));
+    }
+    faceGeo.computeVertexNormals();
+    const face = new THREE.Mesh(faceGeo, new THREE.MeshBasicMaterial({ map: darumaFaceTexture() }));
+    face.scale.set(0.27, 0.28, 0.1);
+    // 衣の表面より少し前に出し、上から見下ろすカメラの方へ少し上向きに傾ける
+    face.position.set(0, FACE_Y, faceZ(FACE_Y) + 0.03);
+    face.rotation.x = -0.45;
+    figure.add(face);
+    // 頭巾の縁（顔のまわりの墨の線）
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.08, 6, 28), outlineMaterial.clone());
+    (rim.material as THREE.MeshBasicMaterial).side = THREE.FrontSide;
+    rim.scale.set(0.29, 0.3, 0.3);
+    rim.position.copy(face.position);
+    rim.rotation.copy(face.rotation);
+    figure.add(rim);
     this.group.add(this.daruma);
 
     // ---- 無敵中の光（ふだんは見えない） ----
@@ -86,7 +126,7 @@ export class Raft {
     });
     this.halo = new THREE.Sprite(this.haloMat);
     this.halo.scale.setScalar(1.9);
-    this.halo.position.y = 0.5;
+    this.halo.position.y = 0.6;
     this.halo.visible = false;
     this.daruma.add(this.halo);
   }

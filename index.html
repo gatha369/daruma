@@ -59,29 +59,78 @@
       </div>
     </section>
 
-    <!-- クリア：大だるま絵が描き上がる（ステップ5では仮の絵）→ クリア画面 -->
+    <!-- クリア演出（第5章）：西掛所の境内で北斎が大だるま絵を描き、櫓に引き上げる → クリア画面 -->
     <section id="clear" class="screen" hidden>
       <div id="clear-stage">
-        <!-- 仮の大だるま絵（案A：ゲームの中で描くオリジナル）。眉間 → 鼻 → 目 → 顔の輪郭 → 衣 の順に描く -->
-        <svg id="daruma-art" viewBox="0 0 220 360" aria-label="大だるま絵">
-          <rect class="sheet" x="4" y="4" width="212" height="352"/>
-          <g class="s1"><path pathLength="1" d="M110 116 L110 131"/><path pathLength="1" d="M104 119 L106 130"/></g>
-          <g class="s2"><path pathLength="1" d="M110 136 Q99 160 104 170 Q111 176 120 168"/></g>
-          <g class="s3">
-            <path pathLength="1" d="M76 122 Q88 108 103 120"/><path pathLength="1" d="M117 120 Q132 108 144 122"/>
-            <circle pathLength="1" cx="91" cy="138" r="10"/><circle pathLength="1" cx="129" cy="138" r="10"/>
-            <circle class="pupil" cx="93" cy="139" r="4"/><circle class="pupil" cx="127" cy="139" r="4"/>
-          </g>
-          <g class="s4">
-            <path pathLength="1" d="M74 112 Q66 168 88 196 Q110 214 132 196 Q154 168 146 112"/>
-            <path pathLength="1" d="M84 186 Q110 226 136 186"/><path pathLength="1" d="M96 182 Q110 190 124 182"/>
-          </g>
-          <g class="s5">
-            <path pathLength="1" d="M62 132 Q50 58 110 46 Q170 58 158 132"/>
-            <path pathLength="1" d="M62 132 Q38 230 26 344"/><path pathLength="1" d="M158 132 Q182 230 194 344"/>
-            <path pathLength="1" d="M70 226 Q110 262 150 226"/><path pathLength="1" d="M60 290 Q110 318 160 290"/>
-          </g>
-        </svg>
+        <div id="keidai">
+          <!-- 境内の奥の本堂の大屋根（墨の影） -->
+          <svg id="hondo" viewBox="0 0 512 160" aria-hidden="true">
+            <path d="M10 150 Q80 134 120 84 L190 34 L322 34 L392 84 Q432 134 502 150 Q256 136 10 150 Z"/>
+            <rect x="176" y="24" width="160" height="12"/>
+            <rect x="96" y="140" width="320" height="20"/>
+          </svg>
+          <div id="ground3d">
+            <div id="sheet-wrap">
+              <!-- 櫓（引き上げたあとに現れる） -->
+              <svg id="yagura" viewBox="-40 -60 300 470" aria-hidden="true">
+                <path class="pole" d="M-16 -50 L-22 410 M236 -50 L242 410"/>
+                <path class="beam" d="M-30 -30 L250 -30"/>
+                <path class="brace" d="M-18 260 L238 120 M238 260 L-18 120 M-20 300 L240 300"/>
+                <path class="rope" d="M20 -30 L20 4 M110 -30 L110 4 M200 -30 L200 4"/>
+              </svg>
+              <div id="sheet">
+                <!-- 大だるま絵：北斎の大だるまに似せたオリジナル（パロディ）。眉間 → 鼻 → 目 → 顔の輪郭 → 衣 の順に描く -->
+                <svg id="daruma-art" viewBox="0 0 220 360" aria-label="大だるま絵">
+                  <defs>
+                    <filter id="brushy" x="-5%" y="-5%" width="110%" height="110%">
+                      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="2" seed="3" result="n"/>
+                      <feDisplacementMap in="SourceGraphic" in2="n" scale="3"/>
+                    </filter>
+                  </defs>
+                  <rect class="paper" x="0" y="0" width="220" height="360"/>
+                  <path class="wash" fill-rule="evenodd" d="M54 108 Q40 30 110 22 Q180 30 166 108 Q190 196 206 250 Q214 300 214 354 L6 354 Q6 300 14 250 Q30 196 54 108 Z M64 104 Q110 70 156 104 Q170 200 110 262 Q50 200 64 104 Z"/>
+                  <g class="ink" filter="url(#brushy)">
+                    <g data-part="眉間"><path class="w5" d="M104 116 Q107 126 104 136"/><path class="w5" d="M116 116 Q113 126 116 136"/></g>
+                    <g data-part="鼻"><path class="w7" d="M110 138 Q102 160 94 176 Q100 186 110 182 Q120 188 128 178"/><path class="w4" d="M98 178 Q102 173 106 179"/><path class="w4" d="M114 179 Q118 173 122 178"/></g>
+                    <g data-part="目">
+                      <path class="w13" d="M52 112 Q70 84 102 104"/><path class="w13" d="M168 112 Q150 84 118 104"/>
+                      <circle class="w6" cx="82" cy="132" r="16"/><circle class="w6" cx="138" cy="132" r="16"/>
+                      <path class="w4" d="M62 124 Q82 110 102 124"/><path class="w4" d="M118 124 Q138 110 158 124"/>
+                      <circle class="pupil" cx="89" cy="128" r="7"/><circle class="pupil" cx="145" cy="128" r="7"/>
+                    </g>
+                    <g data-part="顔の輪郭">
+                      <path class="w8" d="M54 108 Q44 160 64 200"/><path class="w8" d="M166 108 Q176 160 156 200"/>
+                      <path class="w6" d="M50 128 Q34 146 50 166"/><path class="w6" d="M170 128 Q186 146 170 166"/>
+                      <circle class="w5" cx="44" cy="178" r="8"/>
+                      <path class="w9" d="M76 196 Q110 178 144 196"/><path class="w5" d="M96 205 Q110 213 124 205"/>
+                      <path class="w9" d="M64 200 Q74 246 110 258 Q146 246 156 200"/>
+                      <path class="w4" d="M84 214 Q90 236 96 246"/><path class="w4" d="M110 216 L110 252"/><path class="w4" d="M136 214 Q130 236 124 246"/>
+                    </g>
+                    <g data-part="衣">
+                      <path class="w12 shu" d="M54 108 Q40 30 110 22 Q180 30 166 108"/>
+                      <path class="w12 shu" d="M48 116 Q30 196 14 250"/><path class="w12 shu" d="M172 116 Q190 196 206 250"/>
+                      <path class="w12 shu" d="M14 250 Q6 300 6 354"/><path class="w12 shu" d="M206 250 Q214 300 214 354"/>
+                      <path class="w10 shu" d="M66 228 Q110 280 154 228"/>
+                      <path class="w8 shu" d="M44 270 Q70 300 66 354"/><path class="w8 shu" d="M176 270 Q150 300 154 354"/><path class="w8 shu" d="M100 286 Q112 320 104 354"/>
+                    </g>
+                  </g>
+                </svg>
+              </div>
+              <!-- 北斎（後ろ姿）。大筆の穂先が、いま描いている線の先に来る -->
+              <svg id="hokusai" viewBox="0 0 60 100" aria-hidden="true">
+                <path class="brush-handle" d="M44 44 L11 90"/>
+                <ellipse class="brush-head" cx="9" cy="93" rx="6" ry="8" transform="rotate(30 9 93)"/>
+                <path class="kimono" d="M22 40 L44 40 L52 97 L14 97 Z"/>
+                <rect class="obi" x="19" y="60" width="29" height="6"/>
+                <path class="arm" d="M24 46 L16 70 L22 74 M42 46 L44 60 L38 66"/>
+                <circle class="head" cx="33" cy="30" r="9"/>
+                <path class="hair" d="M25 27 Q33 18 41 27 Q37 24 33 24 Q29 24 25 27 Z"/>
+              </svg>
+            </div>
+          </div>
+          <!-- 見物人 -->
+          <svg id="crowd" viewBox="0 0 400 40" preserveAspectRatio="xMidYMax slice" aria-hidden="true"></svg>
+        </div>
         <p id="clear-title">大だるま絵 完成</p>
         <p id="skip-hint">画面をタップすると飛ばせます</p>
       </div>

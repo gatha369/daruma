@@ -44,3 +44,60 @@ export function paletteAt(progress: number): Palette {
     mist: mix(MORNING.mist, 0.45, k),
   };
 }
+
+// ---- 道のりに合わせた景色の変化（第7章）【仮】 ----
+// 和紙の枚数（進み具合 0〜1）と連動して、名古屋城 → 堀川沿いの町並み → 西掛所 と移っていく
+
+export type SceneName = 'castle' | 'town' | 'kakesho';
+export const SCENE_LABEL: Record<SceneName, string> = { castle: '名古屋城', town: '堀川の町並み', kakesho: '西掛所' };
+
+/** 場面の切り替わり（進み具合）。前後 FADE の幅でなめらかに移る */
+export const SCENE_EDGES: [number, number] = [0.33, 0.66];
+export const SCENE_FADE = 0.06;
+
+const ramp = (x: number, a: number, b: number) => clamp((x - a) / (b - a), 0, 1);
+
+/** 各場面の濃さ 0〜1（合計はいつも1） */
+export function sceneWeights(progress: number): Record<SceneName, number> {
+  const p = clamp(progress, 0, 1);
+  const [e1, e2] = SCENE_EDGES;
+  const toTown = ramp(p, e1 - SCENE_FADE, e1 + SCENE_FADE);
+  const toKakesho = ramp(p, e2 - SCENE_FADE, e2 + SCENE_FADE);
+  return { castle: 1 - toTown, town: toTown - toKakesho, kakesho: toKakesho };
+}
+
+/** いちばん濃い場面 */
+export function sceneAt(progress: number): SceneName {
+  const w = sceneWeights(progress);
+  return (Object.keys(w) as SceneName[]).reduce((a, b) => (w[b] > w[a] ? b : a));
+}
+
+/**
+ * 西掛所の大屋根の近さ 0〜1。町並みの後半から遠くに見えはじめ、120枚目に向かって近づく
+ * （0：まだ見えない、1：目の前）
+ */
+export function kakeshoApproach(progress: number): number {
+  return ramp(clamp(progress, 0, 1), SCENE_EDGES[0] + 0.12, 1);
+}
+
+/** 川岸に置くもの */
+export type BankThing = 'matsu' | 'yanagi' | 'kura' | 'machiya' | 'fune' | 'tsuiji' | 'none';
+
+/** 場面ごとの、川岸に置くものの出やすさ */
+const BANK_MIX: Record<SceneName, Partial<Record<BankThing, number>>> = {
+  castle: { matsu: 0.5, yanagi: 0.2, kura: 0.1, none: 0.2 }, // お城の近く：石垣と松
+  town: { kura: 0.3, machiya: 0.35, yanagi: 0.12, fune: 0.18, none: 0.05 }, // 蔵や町家、舟
+  kakesho: { tsuiji: 0.55, matsu: 0.15, machiya: 0.1, yanagi: 0.1, none: 0.1 }, // お寺の築地塀
+};
+
+/** 進み具合に応じて、川岸に置くものを1つ選ぶ（r：0〜1の乱数） */
+export function pickBankThing(progress: number, r: number): BankThing {
+  const w = sceneWeights(progress);
+  const mix = new Map<BankThing, number>();
+  for (const s of Object.keys(w) as SceneName[]) {
+    for (const [k, v] of Object.entries(BANK_MIX[s]) as [BankThing, number][]) mix.set(k, (mix.get(k) ?? 0) + v * w[s]);
+  }
+  let t = r * [...mix.values()].reduce((a, b) => a + b, 0);
+  for (const [k, v] of mix) if ((t -= v) < 0) return k;
+  return 'none';
+}

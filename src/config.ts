@@ -22,8 +22,8 @@ export const PAGE_TITLE = '北斎の大だるま ― 堀川をくだって西掛
 export const PAGE_DESCRIPTION =
   '葛飾北斎が西掛所で120畳の大だるまを描いた出来事にちなむブラウザゲーム。和紙を120枚集めて、大だるま絵を完成させよう。';
 
-/** リンクを貼ったときに出る画像（public/ogp.png。第9章ステップ6で新しい見た目で作り直す） */
-export const OGP_IMAGE = 'ogp.png';
+/** リンクを貼ったときに出る画像（public/ogp.jpg。scripts/make-ogp.mjs で作る。長岡が作った画像に置き換えてよい） */
+export const OGP_IMAGE = 'ogp.jpg';
 
 /** Xの投稿文（第6章）【仮：文面】【未決定：ハッシュタグ（西別院の了解を得てから確定）】 */
 export const HASHTAGS = '#北斎の大だるま #西別院';
